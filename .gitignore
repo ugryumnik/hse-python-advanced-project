@@ -1,3 +1,5 @@
 src/infra/llm/__pycache__/*
 data
 .env
+.DS_Store
+__pycache__

@@ -164,24 +164,6 @@ class LegalRAGAgent:
                 query=question,
             )
 
-    def query_stream(self, question: str, k: int | None = None) -> Iterator[str]:
-        """Стриминговый RAG-запрос"""
-        docs = self.vector_store.search(question, k)
-        
-        if not docs:
-            yield "В базе не найдено релевантной информации."
-            return
-
-        context = self._format_context(docs)
-        prompt = RAG_PROMPT_TEMPLATE.format(context=context, question=question)
-        
-        messages = [
-            YandexGPTMessage(role="system", text=LEGAL_SYSTEM_PROMPT),
-            YandexGPTMessage(role="user", text=prompt),
-        ]
-
-        yield from self.gpt_client.complete_stream(messages)
-
     def get_stats(self) -> dict[str, Any]:
         """Статистика системы"""
         info = self.vector_store.get_info()
