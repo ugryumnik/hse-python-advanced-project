@@ -12,7 +12,7 @@ httpx>=0.25.0
 aiofiles
 
 # Telegram
-aiogram
+aiogram==3.10.0
 
 # Database
 SQLAlchemy>=2.0
