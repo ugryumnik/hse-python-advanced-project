@@ -2,4 +2,6 @@ src/infra/llm/__pycache__/*
 data
 .env
 .DS_Store
-__pycache__
+__pycache__/
+bvenv/
+models/
