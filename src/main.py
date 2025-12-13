@@ -4,8 +4,8 @@ import logging
 from aiogram import Bot, Dispatcher
 
 from config import settings
-from src.bot.handlers import router
-from src.bot.middlewares import LoggingMiddleware
+from bot.handlers import router
+from bot.middlewares import LoggingMiddleware
 
 
 async def main():
