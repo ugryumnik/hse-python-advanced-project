@@ -1,4 +1,4 @@
-"""Векторное хранилище на базе Qdrant"""
+"""Асинхронное векторное хранилище на базе Qdrant"""
 
 import logging
 import uuid
@@ -6,7 +6,7 @@ from typing import List, Any
 
 import numpy as np
 from langchain_core.documents import Document
-from qdrant_client import QdrantClient
+from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
     Distance,
     VectorParams,
@@ -23,23 +23,35 @@ logger = logging.getLogger(__name__)
 
 
 class QdrantVectorStore:
-    """Векторное хранилище Qdrant"""
+    """Асинхронное векторное хранилище Qdrant"""
 
     def __init__(self, config: QdrantConfig, embeddings: YandexEmbeddings):
         self.config = config
         self.embeddings = embeddings
+        self._client: AsyncQdrantClient | None = None
+        self._initialized = False
+        logger.info(f"Qdrant config: {config.host}:{config.port}")
 
-        self._client = QdrantClient(host=config.host, port=config.port)
-        logger.info(f"Qdrant: {config.host}:{config.port}")
+    async def _get_client(self) -> AsyncQdrantClient:
+        """Ленивая инициализация клиента"""
+        if self._client is None:
+            self._client = AsyncQdrantClient(host=self.config.host, port=self.config.port)
+            logger.info(f"Qdrant connected: {self.config.host}:{self.config.port}")
         
-        self._ensure_collection()
+        if not self._initialized:
+            await self._ensure_collection()
+            self._initialized = True
+        
+        return self._client
 
-    def _ensure_collection(self) -> None:
+    async def _ensure_collection(self) -> None:
         """Создать коллекцию если не существует"""
-        collections = [c.name for c in self._client.get_collections().collections]
+        client = self._client
+        collections_response = await client.get_collections()
+        collections = [c.name for c in collections_response.collections]
         
         if self.config.collection_name not in collections:
-            self._client.create_collection(
+            await client.create_collection(
                 collection_name=self.config.collection_name,
                 vectors_config=VectorParams(
                     size=self.config.embedding_dim,
@@ -48,13 +60,15 @@ class QdrantVectorStore:
             )
             logger.info(f"Создана коллекция: {self.config.collection_name}")
 
-    def add_documents(self, documents: List[Document]) -> List[str]:
-        """Добавить документы"""
+    async def add_documents(self, documents: List[Document]) -> List[str]:
+        """Асинхронно добавить документы"""
         if not documents:
             return []
         
+        client = await self._get_client()
+        
         texts = [doc.page_content for doc in documents]
-        embeddings = self.embeddings.embed_documents(texts)
+        embeddings = await self.embeddings.aembed_documents(texts)
         
         points = []
         ids = []
@@ -77,7 +91,7 @@ class QdrantVectorStore:
         
         # Загрузка батчами
         for i in range(0, len(points), 100):
-            self._client.upsert(
+            await client.upsert(
                 collection_name=self.config.collection_name,
                 points=points[i:i + 100],
             )
@@ -102,15 +116,17 @@ class QdrantVectorStore:
             ))
         return documents
 
-    def similarity_search(
+    async def similarity_search(
         self,
         query: str,
         k: int | None = None,
         filter_dict: dict | None = None,
     ) -> List[Document]:
-        """Поиск по сходству"""
+        """Асинхронный поиск по сходству"""
         k = k or self.config.search_k
-        query_vector = self.embeddings.embed_query(query)
+        client = await self._get_client()
+        
+        query_vector = await self.embeddings.aembed_query(query)
         
         qdrant_filter = None
         if filter_dict:
@@ -119,7 +135,7 @@ class QdrantVectorStore:
                 for key, value in filter_dict.items()
             ])
 
-        results = self._client.query_points(
+        results = await client.query_points(
             collection_name=self.config.collection_name,
             query=query_vector,
             limit=k,
@@ -129,20 +145,22 @@ class QdrantVectorStore:
 
         return self._points_to_documents(results.points)
 
-    def mmr_search(
+    async def mmr_search(
         self,
         query: str,
         k: int | None = None,
         fetch_k: int = 20,
         lambda_mult: float | None = None,
     ) -> List[Document]:
-        """MMR поиск для разнообразия результатов"""
+        """Асинхронный MMR поиск для разнообразия результатов"""
         k = k or self.config.search_k
         lambda_mult = lambda_mult or self.config.mmr_lambda
         
-        query_vector = np.array(self.embeddings.embed_query(query))
+        client = await self._get_client()
         
-        results = self._client.query_points(
+        query_vector = np.array(await self.embeddings.aembed_query(query))
+        
+        results = await client.query_points(
             collection_name=self.config.collection_name,
             query=query_vector.tolist(),
             limit=fetch_k,
@@ -174,10 +192,8 @@ class QdrantVectorStore:
                 break
                 
             if not selected:
-                # Первый - самый релевантный
                 best_idx = max(remaining, key=lambda i: candidates[i]["score"] or 0)
             else:
-                # MMR: баланс релевантности и разнообразия
                 mmr_scores = []
                 for idx in remaining:
                     relevance = float(np.dot(query_vector, candidates[idx]["vector"]))
@@ -192,7 +208,6 @@ class QdrantVectorStore:
             selected.append(best_idx)
             remaining.remove(best_idx)
         
-        # Собираем результаты
         documents = []
         for idx in selected:
             payload = candidates[idx]["payload"] or {}
@@ -208,31 +223,38 @@ class QdrantVectorStore:
         
         return documents
 
-    def search(self, query: str, k: int | None = None) -> List[Document]:
-        """Универсальный поиск (выбирает метод по конфигу)"""
+    async def search(self, query: str, k: int | None = None) -> List[Document]:
+        """Универсальный асинхронный поиск"""
         if self.config.use_mmr:
-            return self.mmr_search(query, k)
-        return self.similarity_search(query, k)
+            return await self.mmr_search(query, k)
+        return await self.similarity_search(query, k)
 
-    def clear_collection(self) -> None:
+    async def clear_collection(self) -> None:
         """Очистить коллекцию"""
-        self._client.delete_collection(self.config.collection_name)
-        self._ensure_collection()
+        client = await self._get_client()
+        await client.delete_collection(self.config.collection_name)
+        self._initialized = False
+        await self._ensure_collection()
         logger.info(f"Коллекция очищена: {self.config.collection_name}")
 
-    def count(self) -> int:
+    async def count(self) -> int:
         """Количество документов"""
-        return self._client.get_collection(self.config.collection_name).points_count
+        client = await self._get_client()
+        info = await client.get_collection(self.config.collection_name)
+        return info.points_count
 
-    def get_info(self) -> dict[str, Any]:
+    async def get_info(self) -> dict[str, Any]:
         """Информация о коллекции"""
-        info = self._client.get_collection(self.config.collection_name)
+        client = await self._get_client()
+        info = await client.get_collection(self.config.collection_name)
         return {
             "name": self.config.collection_name,
             "points_count": info.points_count,
             "status": info.status.value,
         }
 
-    def close(self) -> None:
-        self._client.close()
+    async def close(self) -> None:
+        if self._client:
+            await self._client.close()
+            self._client = None
         logger.info("Qdrant закрыт")

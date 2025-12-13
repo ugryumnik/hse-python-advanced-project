@@ -1,10 +1,10 @@
-"""Клиент для Yandex GPT API"""
+"""Асинхронный клиент для Yandex GPT API"""
 
 import json
 import logging
-import time
+import asyncio
 from dataclasses import dataclass
-from typing import Iterator
+from typing import AsyncIterator
 
 import httpx
 
@@ -40,26 +40,32 @@ class YandexGPTError(Exception):
 
 
 class YandexGPTClient:
-    """Синхронный клиент для Yandex GPT API"""
+    """Асинхронный клиент для Yandex GPT API"""
 
     def __init__(self, config: YandexGPTConfig):
         self.config = config
-        self._client = httpx.Client(
-            timeout=config.timeout,
-            headers={
-                "Content-Type": "application/json",
-                **config.get_auth_header(),
-            },
-        )
+        self._client: httpx.AsyncClient | None = None
         logger.info(f"YandexGPT: {config.model_uri}")
 
-    def complete(
+    async def _get_client(self) -> httpx.AsyncClient:
+        """Ленивая инициализация клиента"""
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.config.timeout,
+                headers={
+                    "Content-Type": "application/json",
+                    **self.config.get_auth_header(),
+                },
+            )
+        return self._client
+
+    async def complete(
         self,
         messages: list[YandexGPTMessage],
         temperature: float | None = None,
         max_tokens: int | None = None,
     ) -> YandexGPTResponse:
-        """Генерация ответа"""
+        """Асинхронная генерация ответа"""
         body = {
             "modelUri": self.config.model_uri,
             "completionOptions": {
@@ -70,9 +76,11 @@ class YandexGPTClient:
             "messages": [{"role": m.role, "text": m.text} for m in messages],
         }
 
+        client = await self._get_client()
+
         for attempt in range(self.config.max_retries):
             try:
-                response = self._client.post(self.config.api_url, json=body)
+                response = await client.post(self.config.api_url, json=body)
                 response.raise_for_status()
                 
                 result = response.json()["result"]
@@ -86,51 +94,24 @@ class YandexGPTClient:
                 if e.response.status_code == 429:
                     wait = 2 ** attempt
                     logger.warning(f"Rate limit, ждём {wait}s...")
-                    time.sleep(wait)
+                    await asyncio.sleep(wait)
                     continue
                 raise YandexGPTError(f"HTTP {e.response.status_code}", e.response.status_code)
             except httpx.RequestError as e:
                 if attempt < self.config.max_retries - 1:
-                    time.sleep(1)
+                    await asyncio.sleep(1)
                     continue
                 raise YandexGPTError(f"Ошибка соединения: {e}")
 
         raise YandexGPTError("Превышено количество попыток")
 
-    def complete_stream(
-        self,
-        messages: list[YandexGPTMessage],
-        temperature: float | None = None,
-        max_tokens: int | None = None,
-    ) -> Iterator[str]:
-        """Стриминговая генерация"""
-        body = {
-            "modelUri": self.config.model_uri,
-            "completionOptions": {
-                "stream": True,
-                "temperature": temperature or self.config.temperature,
-                "maxTokens": str(max_tokens or self.config.max_tokens),
-            },
-            "messages": [{"role": m.role, "text": m.text} for m in messages],
-        }
+    async def close(self):
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
-        with self._client.stream("POST", self.config.api_url, json=body) as response:
-            response.raise_for_status()
-            for line in response.iter_lines():
-                if not line:
-                    continue
-                try:
-                    data = json.loads(line)
-                    if text := data.get("result", {}).get("alternatives", [{}])[0].get("message", {}).get("text"):
-                        yield text
-                except json.JSONDecodeError:
-                    continue
-
-    def close(self):
-        self._client.close()
-
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    async def __aexit__(self, *args):
+        await self.close()

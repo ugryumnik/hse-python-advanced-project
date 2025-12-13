@@ -1,9 +1,10 @@
-"""RAG-агент для юридических документов"""
+"""Асинхронный RAG-агент для юридических документов"""
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Iterator, Any
+from typing import Any
 
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -28,7 +29,7 @@ class RAGResponse:
 
 
 class LegalRAGAgent:
-    """RAG-агент для юридических документов"""
+    """Асинхронный RAG-агент для юридических документов"""
 
     def __init__(
         self,
@@ -72,9 +73,15 @@ class LegalRAGAgent:
             self._vector_store = QdrantVectorStore(self.qdrant_config, self.embeddings)
         return self._vector_store
 
-    def index_documents(self, force_reindex: bool = False) -> int:
-        """Индексировать документы из директории"""
-        documents = list(self.document_loader.load_directory())
+    async def index_documents(self, force_reindex: bool = False) -> int:
+        """Асинхронно индексировать документы из директории"""
+        # Загрузка документов - CPU-bound, выносим в executor
+        loop = asyncio.get_event_loop()
+        documents = await loop.run_in_executor(
+            None, 
+            lambda: list(self.document_loader.load_directory())
+        )
+        
         if not documents:
             logger.warning("Документы не найдены")
             return 0
@@ -83,20 +90,24 @@ class LegalRAGAgent:
         logger.info(f"Создано {len(chunks)} чанков из {len(documents)} документов")
 
         if force_reindex:
-            self.vector_store.clear_collection()
+            await self.vector_store.clear_collection()
 
         # Индексация батчами
         for i in range(0, len(chunks), 50):
-            self.vector_store.add_documents(chunks[i:i + 50])
+            await self.vector_store.add_documents(chunks[i:i + 50])
             logger.info(f"Проиндексировано {min(i + 50, len(chunks))}/{len(chunks)}")
 
         return len(chunks)
 
-    def add_document(self, file_path: str | Path) -> int:
-        """Добавить один документ"""
-        documents = self.document_loader.load_file(Path(file_path))
+    async def add_document(self, file_path: str | Path) -> int:
+        """Асинхронно добавить один документ"""
+        loop = asyncio.get_event_loop()
+        documents = await loop.run_in_executor(
+            None,
+            lambda: self.document_loader.load_file(Path(file_path))
+        )
         chunks = self.text_splitter.split_documents(documents)
-        self.vector_store.add_documents(chunks)
+        await self.vector_store.add_documents(chunks)
         logger.info(f"Добавлен {file_path}: {len(chunks)} чанков")
         return len(chunks)
 
@@ -126,12 +137,12 @@ class LegalRAGAgent:
         
         return sources
 
-    def query(self, question: str, k: int | None = None) -> RAGResponse:
-        """Выполнить RAG-запрос"""
+    async def query(self, question: str, k: int | None = None) -> RAGResponse:
+        """Асинхронно выполнить RAG-запрос"""
         logger.info(f"Запрос: {question[:50]}...")
 
         # Поиск релевантных документов
-        docs = self.vector_store.search(question, k)
+        docs = await self.vector_store.search(question, k)
         
         if not docs:
             return RAGResponse(
@@ -149,7 +160,7 @@ class LegalRAGAgent:
         ]
 
         try:
-            response = self.gpt_client.complete(messages)
+            response = await self.gpt_client.complete(messages)
             return RAGResponse(
                 answer=response.text,
                 sources=self._extract_sources(docs),
@@ -164,9 +175,9 @@ class LegalRAGAgent:
                 query=question,
             )
 
-    def get_stats(self) -> dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Статистика системы"""
-        info = self.vector_store.get_info()
+        info = await self.vector_store.get_info()
         return {
             "total_chunks": info["points_count"],
             "collection": info["name"],
@@ -175,19 +186,19 @@ class LegalRAGAgent:
             "documents_dir": str(self.config.documents_dir),
         }
 
-    def health_check(self) -> bool:
-        """Проверка работоспособности"""
+    async def health_check(self) -> bool:
+        """Асинхронная проверка работоспособности"""
         try:
             # Qdrant
-            self.vector_store.count()
+            await self.vector_store.count()
             logger.info("✓ Qdrant OK")
             
             # Embeddings
-            self.embeddings.embed_query("тест")
+            await self.embeddings.aembed_query("тест")
             logger.info("✓ Embeddings OK")
             
             # GPT
-            response = self.gpt_client.complete([
+            response = await self.gpt_client.complete([
                 YandexGPTMessage(role="user", text="Ответь: OK")
             ])
             logger.info("✓ GPT OK")
@@ -197,17 +208,17 @@ class LegalRAGAgent:
             logger.error(f"Health check failed: {e}")
             return False
 
-    def close(self):
+    async def close(self):
         """Закрыть ресурсы"""
         if self._gpt_client:
-            self._gpt_client.close()
+            await self._gpt_client.close()
         if self._embeddings:
-            self._embeddings.close()
+            await self._embeddings.close()
         if self._vector_store:
-            self._vector_store.close()
+            await self._vector_store.close()
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    async def __aexit__(self, *args):
+        await self.close()

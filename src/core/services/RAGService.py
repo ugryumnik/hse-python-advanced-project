@@ -10,7 +10,7 @@ from infra.llm import (
 
 
 class RAGService:
-    """Сервис для RAG-запросов к юридическим документам"""
+    """Асинхронный сервис для RAG-запросов к юридическим документам"""
 
     def __init__(
         self,
@@ -19,11 +19,6 @@ class RAGService:
         yandex_config: YandexGPTConfig | None = None,
         qdrant_config: QdrantConfig | None = None,
     ):
-        """
-        Инициализация RAG сервиса.
-        
-        Можно передать готового агента или конфигурации для создания нового.
-        """
         if agent is not None:
             self._agent = agent
         else:
@@ -37,47 +32,33 @@ class RAGService:
     def agent(self) -> LegalRAGAgent:
         return self._agent
 
-    def query(self, question: str, k: int | None = None) -> tuple[str, list[dict]]:
-        """
-        Выполнить RAG-запрос.
-        
-        Args:
-            question: Вопрос пользователя
-            k: Количество документов для контекста
-            
-        Returns:
-            Кортеж (ответ, список источников)
-        """
-        response = self._agent.query(question, k=k)
+    async def query(self, question: str, k: int | None = None) -> tuple[str, list[dict]]:
+        """Асинхронный RAG-запрос"""
+        response = await self._agent.query(question, k=k)
         return response.answer, response.sources
 
-    def add_document(self, file_path: str | Path) -> int:
-        """
-        Добавить документ в индекс.
-        
-        Returns:
-            Количество созданных чанков
-        """
-        return self._agent.add_document(file_path)
+    async def add_document(self, file_path: str | Path) -> int:
+        """Асинхронно добавить документ в индекс"""
+        return await self._agent.add_document(file_path)
 
-    def index_all(self, force: bool = False) -> int:
-        """Индексировать все документы из директории"""
-        return self._agent.index_documents(force_reindex=force)
+    async def index_all(self, force: bool = False) -> int:
+        """Асинхронно индексировать все документы"""
+        return await self._agent.index_documents(force_reindex=force)
 
-    def get_stats(self) -> dict[str, Any]:
+    async def get_stats(self) -> dict[str, Any]:
         """Статистика системы"""
-        return self._agent.get_stats()
+        return await self._agent.get_stats()
 
-    def health_check(self) -> bool:
+    async def health_check(self) -> bool:
         """Проверка работоспособности"""
-        return self._agent.health_check()
+        return await self._agent.health_check()
 
-    def close(self) -> None:
+    async def close(self) -> None:
         """Закрыть соединения"""
-        self._agent.close()
+        await self._agent.close()
 
-    def __enter__(self):
+    async def __aenter__(self):
         return self
 
-    def __exit__(self, *args):
-        self.close()
+    async def __aexit__(self, *args):
+        await self.close()

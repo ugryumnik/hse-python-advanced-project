@@ -17,21 +17,14 @@ async def main():
     dp = Dispatcher()
 
     dp.message.middleware(LoggingMiddleware())
-
     dp.include_router(router)
 
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000)
+    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
     server = uvicorn.Server(config)
 
-    tasks = [
-        asyncio.create_task(server.serve()),
-        asyncio.create_task(dp.start_polling(bot))
-    ]
-
-    done, pending = await asyncio.wait([*tasks], return_when=asyncio.FIRST_COMPLETED)
-
-    for task in pending:
-        task.cancel()
+    async with asyncio.TaskGroup() as tg:
+        tg.create_task(server.serve())
+        tg.create_task(dp.start_polling(bot))
 
 
 if __name__ == "__main__":
