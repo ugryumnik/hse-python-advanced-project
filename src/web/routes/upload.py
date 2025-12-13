@@ -1,6 +1,9 @@
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, Form, Depends
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession
+from infra.db.database import get_session
+from infra.db.user_repository import UserRepository
 
 from core.services import IngestionService
 from web import get_ingestion_service
@@ -18,8 +21,14 @@ upload_router = APIRouter()
 async def upload_document(
     file: UploadFile,
     user_id: int = Form(...),
-    ingestion_service: IngestionService = Depends(get_ingestion_service)
+    ingestion_service: IngestionService = Depends(get_ingestion_service),
+    session: AsyncSession = Depends(get_session)
 ):
+    # Authorize: only admin can upload
+    repo = UserRepository(session)
+    user = await repo.get_by_telegram_id(user_id)
+    if not user or user.role != "admin":
+        raise HTTPException(status_code=403, detail="Forbidden: admin only")
     try:
         chunks_count = await ingestion_service.process_file(file)
         

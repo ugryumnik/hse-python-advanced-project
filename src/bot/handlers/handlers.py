@@ -7,6 +7,8 @@ import aiohttp
 
 from bot.keyboards import mode_keyboard
 from config import settings
+from infra.db.database import get_session
+from infra.db.user_repository import UserRepository
 
 router = Router()
 
@@ -14,11 +16,39 @@ router = Router()
 class BotStates(StatesGroup):
     ask_mode = State()
     upload_mode = State()
+    auth_token = State()
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message):
+async def cmd_start(message: Message, state: FSMContext):
+    async for session in get_session():
+        repo = UserRepository(session)
+        existing = await repo.get_by_telegram_id(message.from_user.id)
+    if not existing:
+        await state.set_state(BotStates.auth_token)
+        await message.answer("Введите токен доступа (USER или ADMIN):")
+        return
     await message.answer("Привет! Я Legal RAG Bot. Выберите режим:", reply_markup=mode_keyboard)
+
+
+@router.message(BotStates.auth_token, F.text)
+async def handle_auth_token(message: Message, state: FSMContext):
+    token = message.text.strip()
+    role = None
+    if token == settings.admin_token:
+        role = "admin"
+    elif token == settings.user_token:
+        role = "user"
+
+    if role is None:
+        await message.answer("Неверный токен. Доступ запрещён.")
+        return
+
+    async for session in get_session():
+        repo = UserRepository(session)
+        await repo.upsert(message.from_user.id, role)
+    await state.clear()
+    await message.answer("Успешная аутентификация. Можете пользоваться ботом.", reply_markup=mode_keyboard)
 
 
 @router.message(Command("help"))
@@ -26,14 +56,40 @@ async def cmd_help(message: Message):
     await message.answer("Отправьте вопрос, и я найду ответ в документах с ссылками на источники.", reply_markup=mode_keyboard)
 
 
+@router.message(Command("reauth"))
+async def cmd_reauth(message: Message, state: FSMContext):
+    async for session in get_session():
+        repo = UserRepository(session)
+        await repo.delete_by_telegram_id(message.from_user.id)
+    await state.set_state(BotStates.auth_token)
+    await message.answer("Права сброшены. Введите токен доступа (USER или ADMIN):")
+
+
 @router.message(F.text == "Задать вопрос")
 async def select_ask_mode(message: Message, state: FSMContext):
+    async for session in get_session():
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(message.from_user.id)
+    if not user:
+        await state.set_state(BotStates.auth_token)
+        await message.answer("Сначала введите токен доступа.")
+        return
     await state.set_state(BotStates.ask_mode)
     await message.answer("Режим вопроса активирован. Отправьте ваш вопрос текстом.", reply_markup=mode_keyboard)
 
 
 @router.message(F.text == "Загрузить документ")
 async def select_upload_mode(message: Message, state: FSMContext):
+    async for session in get_session():
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(message.from_user.id)
+    if not user:
+        await state.set_state(BotStates.auth_token)
+        await message.answer("Сначала введите токен доступа.")
+        return
+    if user.role != "admin":
+        await message.answer("Загрузка доступна только администратору.")
+        return
     await state.set_state(BotStates.upload_mode)
     await message.answer("Режим загрузки активирован. Отправьте PDF файлы.", reply_markup=mode_keyboard)
 
@@ -42,6 +98,12 @@ async def select_upload_mode(message: Message, state: FSMContext):
 async def handle_ask(message: Message):
     question = message.text
     user_id = message.from_user.id
+    async for session in get_session():
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(user_id)
+    if not user:
+        await message.answer("Недостаточно прав. Введите токен доступа.")
+        return
 
     try:
         async with aiohttp.ClientSession() as session:
@@ -74,6 +136,12 @@ async def handle_ask_document(message: Message):
 
 @router.message(BotStates.upload_mode, F.document)
 async def handle_upload(message: Message):
+    async for session in get_session():
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(message.from_user.id)
+    if not user or user.role != "admin":
+        await message.answer("Загрузка запрещена: требуется токен администратора.")
+        return
     if message.document.mime_type != "application/pdf":
         await message.answer("Отправьте файл в формате PDF.", reply_markup=mode_keyboard)
         return
