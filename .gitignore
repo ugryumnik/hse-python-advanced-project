@@ -1,2 +1,3 @@
 src/infra/llm/__pycache__/*
 data
+.env
