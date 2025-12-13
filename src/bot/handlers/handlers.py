@@ -56,7 +56,7 @@ async def handle_ask(message: Message):
 
                     response_text = answer
                     if sources:
-                        response_text += "\n\nИсточники:\n"
+                        response_text += "\n\nРелевантные источники:\n"
                         for i, src in enumerate(sources, 1):
                             response_text += f"{i}. {src['filename']} (стр. {src['page']})\n"
 

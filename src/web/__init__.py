@@ -3,7 +3,6 @@ from fastapi import FastAPI
 
 from infra.llm import LegalRAGAgent
 from core.services import RAGService, IngestionService
-from .routes import router
 
 
 # Глобальные сервисы (инициализируются при старте)
@@ -36,7 +35,6 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-app.include_router(router)
 
 
 def get_rag_service() -> RAGService:
@@ -51,3 +49,9 @@ def get_ingestion_service() -> IngestionService:
     if ingestion_service is None:
         raise RuntimeError("Ingestion service not initialized")
     return ingestion_service
+
+
+# Import routes after service getters to avoid circular imports
+from .routes import router
+
+app.include_router(router)
