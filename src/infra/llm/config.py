@@ -1,61 +1,76 @@
-from pydantic import BaseModel, Field
-from pathlib import Path
+"""Конфигурация компонентов RAG системы"""
+
 from enum import Enum
+from pathlib import Path
+
+from pydantic import BaseModel, Field, SecretStr
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
-class DeviceType(str, Enum):
-    CPU = "cpu"
-    MPS = "mps"
-    CUDA = "cuda"
+class YandexGPTModel(str, Enum):
+    """Доступные модели Yandex GPT"""
+    LITE = "yandexgpt-lite"
+    PRO = "yandexgpt"
+    PRO_32K = "yandexgpt-32k"
 
 
-class LLMConfig(BaseModel):
-    """Конфигурация LLM модели"""
+class YandexGPTConfig(BaseSettings):
+    """Конфигурация Yandex GPT API"""
+    
+    model_config = SettingsConfigDict(
+        env_prefix="YANDEX_GPT_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
-    # Путь к модели
-    local_model_path: Path | None = None
-    model_id: str | None = None
-    model_file: str | None = None
+    api_key: SecretStr | None = None
+    folder_id: str
 
-    # Параметры llama-cpp
-    n_ctx: int = 4096
-    n_gpu_layers: int = -1
-    n_batch: int = 512
-
-    # Параметры генерации
+    model: YandexGPTModel = YandexGPTModel.LITE
+    model_version: str = "latest"
+    
     temperature: float = 0.1
     max_tokens: int = 1024
-    top_p: float = 0.95
-    top_k: int = 40
+    
+    api_url: str = "https://llm.api.cloud.yandex.net/foundationModels/v1/completion"
+    embeddings_url: str = "https://llm.api.cloud.yandex.net/foundationModels/v1/textEmbedding"
+    timeout: int = 60
+    max_retries: int = 3
 
-    # Против повторений
-    repeat_penalty: float = 1.1  # Штраф за повторение токенов
+    @property
+    def model_uri(self) -> str:
+        return f"gpt://{self.folder_id}/{self.model.value}/{self.model_version}"
 
-    # Stop токены для Qwen2.5-Instruct
-    stop: list[str] = Field(default=[
-        "<|im_end|>",
-        "<|endoftext|>",
-        "<|im_start|>",
-    ])
-
-    cache_dir: Path = Path("./models/llm")
-
-
-class EmbeddingsConfig(BaseModel):
-    """Конфигурация модели эмбеддингов"""
-    model_id: str = "intfloat/multilingual-e5-large"
-    device: DeviceType = DeviceType.MPS
-    normalize_embeddings: bool = True
-    cache_dir: Path = Path("./models/embeddings")
+    def get_auth_header(self) -> dict[str, str]:
+        if not self.api_key:
+            raise ValueError("YANDEX_GPT_API_KEY не задан")
+        return {"Authorization": f"Api-Key {self.api_key.get_secret_value()}"}
 
 
-class VectorStoreConfig(BaseModel):
-    """Конфигурация векторного хранилища"""
-    persist_directory: Path = Path("./data/vectorstore")
+class QdrantConfig(BaseSettings):
+    """Конфигурация Qdrant"""
+    
+    model_config = SettingsConfigDict(
+        env_prefix="QDRANT_",
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+    
+    host: str = "localhost"
+    port: int = 6333
+    
+    # Для Qdrant Cloud
+    url: str | None = None
+    api_key: SecretStr | None = None
+    
     collection_name: str = "legal_documents"
-
+    embedding_dim: int = 256
+    
+    # Поиск
     search_k: int = 5
-    search_type: str = "mmr"
+    use_mmr: bool = True
     mmr_lambda: float = 0.7
 
 
@@ -64,15 +79,11 @@ class ChunkingConfig(BaseModel):
     chunk_size: int = 1000
     chunk_overlap: int = 200
     separators: list[str] = Field(
-        default=["\n\n", "\n", ".", "!", "?", ";", ":", " ", ""]
+        default=["\n\n", "\n", ".", "!", "?", ";", " "]
     )
 
 
 class RAGConfig(BaseModel):
-    """Общая конфигурация RAG пайплайна"""
-    llm: LLMConfig = Field(default_factory=LLMConfig)
-    embeddings: EmbeddingsConfig = Field(default_factory=EmbeddingsConfig)
-    vector_store: VectorStoreConfig = Field(default_factory=VectorStoreConfig)
-    chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)
-
+    """Общая конфигурация RAG"""
     documents_dir: Path = Path("./data/documents")
+    chunking: ChunkingConfig = Field(default_factory=ChunkingConfig)

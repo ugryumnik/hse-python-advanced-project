@@ -1,73 +1,86 @@
-from pathlib import Path
-import logging
-import torch
-from langchain_huggingface import HuggingFaceEmbeddings
+"""Yandex Embeddings для векторизации текста"""
 
-from .config import EmbeddingsConfig, DeviceType
+import logging
+import time
+from typing import List
+
+import httpx
+from langchain_core.embeddings import Embeddings
+
+from .config import YandexGPTConfig
 
 logger = logging.getLogger(__name__)
 
 
-class EmbeddingsManager:
-    """Менеджер моделей эмбеддингов"""
+class YandexEmbeddings(Embeddings):
+    """LangChain-совместимые Yandex Embeddings"""
 
-    def __init__(self, config: EmbeddingsConfig):
+    DOC_MODEL = "text-search-doc"
+    QUERY_MODEL = "text-search-query"
+    MAX_TEXT_LENGTH = 8000
+
+    def __init__(self, config: YandexGPTConfig):
         self.config = config
-        self._embeddings = None
-
-    def _detect_device(self) -> str:
-        """Определить доступное устройство"""
-        if self.config.device == DeviceType.MPS:
-            if torch.backends.mps.is_available():
-                logger.info("Apple Metal (MPS)")
-                return "mps"
-            logger.warning("CPU")
-            return "cpu"
-        elif self.config.device == DeviceType.CUDA:
-            if torch.cuda.is_available():
-                logger.info("CUDA")
-                return "cuda"
-            logger.warning("CPU")
-            return "cpu"
-        return "cpu"
-
-    def get_embeddings(self) -> HuggingFaceEmbeddings:
-        """Получить или создать модель эмбеддингов (singleton)"""
-        if self._embeddings is not None:
-            return self._embeddings
-
-        device = self._detect_device()
-        cache_dir = Path(self.config.cache_dir)
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        logger.info(f"Загружаем модель эмбеддингов: {self.config.model_id}")
-
-        self._embeddings = HuggingFaceEmbeddings(
-            model_name=self.config.model_id,
-            model_kwargs={
-                "device": device,
-                "trust_remote_code": True,
+        self._client = httpx.Client(
+            timeout=30,
+            headers={
+                "Content-Type": "application/json",
+                **config.get_auth_header(),
             },
-            encode_kwargs={
-                "normalize_embeddings": self.config.normalize_embeddings,
-                "batch_size": 32,
-            },
-            cache_folder=str(cache_dir),
         )
+        logger.info("YandexEmbeddings инициализированы")
 
-        logger.info("Модель эмбеддингов загружена успешно")
-        return self._embeddings
+    def _get_model_uri(self, model: str) -> str:
+        return f"emb://{self.config.folder_id}/{model}/latest"
 
-    def embed_query(self, text: str) -> list[float]:
-        """Получить эмбеддинг для запроса"""
-        # Для E5 моделей нужен префикс "query: "
-        if "e5" in self.config.model_id.lower():
-            text = f"query: {text}"
-        return self.get_embeddings().embed_query(text)
+    def _embed(self, text: str, model: str) -> List[float]:
+        """Получить эмбеддинг для текста"""
+        text = text[:self.MAX_TEXT_LENGTH] if len(text) > self.MAX_TEXT_LENGTH else text
+        
+        body = {
+            "modelUri": self._get_model_uri(model),
+            "text": text,
+        }
 
-    def embed_documents(self, texts: list[str]) -> list[list[float]]:
-        """Получить эмбеддинги для документов"""
-        # Для E5 моделей нужен префикс "passage: "
-        if "e5" in self.config.model_id.lower():
-            texts = [f"passage: {t}" for t in texts]
-        return self.get_embeddings().embed_documents(texts)
+        for attempt in range(3):
+            try:
+                response = self._client.post(self.config.embeddings_url, json=body)
+                response.raise_for_status()
+                return response.json()["embedding"]
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 429:
+                    time.sleep(2 ** attempt)
+                    continue
+                raise RuntimeError(f"Embeddings API error: {e.response.status_code}")
+            except httpx.RequestError as e:
+                if attempt < 2:
+                    time.sleep(1)
+                    continue
+                raise RuntimeError(f"Connection error: {e}")
+
+        raise RuntimeError("Превышено количество попыток")
+
+    def embed_documents(self, texts: List[str]) -> List[List[float]]:
+        """Эмбеддинги для документов"""
+        embeddings = []
+        for i, text in enumerate(texts):
+            if not text.strip():
+                embeddings.append([0.0] * 256)
+                continue
+            embeddings.append(self._embed(text, self.DOC_MODEL))
+            if (i + 1) % 10 == 0:
+                logger.debug(f"Embedded {i + 1}/{len(texts)}")
+        return embeddings
+
+    def embed_query(self, text: str) -> List[float]:
+        """Эмбеддинг для поискового запроса"""
+        return self._embed(text, self.QUERY_MODEL)
+
+    def close(self):
+        self._client.close()
+
+    def __del__(self):
+        try:
+            self.close()
+        except Exception:
+            pass

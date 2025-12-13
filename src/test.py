@@ -1,50 +1,65 @@
-from pathlib import Path
+"""Тестовый скрипт для проверки RAG системы"""
+
 import logging
+from pathlib import Path
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-
-from infra.llm import LegalRAGAgent, RAGConfig, LLMConfig
-
-# Конфигурация
-config = RAGConfig(
-    documents_dir=Path("./legal_docs"),
-    llm=LLMConfig(
-        local_model_path=Path("./models/llm/qwen2.5-7b-instruct-q6_k.gguf"),
-        n_ctx=4096,
-        max_tokens=512,
-        temperature=0.1,
-        repeat_penalty=1.25,
-        stop=[
-            "<|im_end|>",
-            "<|endoftext|>",
-            "Human"
-        ],
-    ),
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(levelname)s - %(message)s"
 )
 
-# Инициализация
-agent = LegalRAGAgent(config)
+from infra.llm import LegalRAGAgent, RAGConfig, YandexGPTConfig, QdrantConfig
 
-# Индексация (только если база пустая)
-stats = agent.get_stats()
-if stats["total_chunks"] == 0:
-    num_chunks = agent.index_documents()
-    print(f"Проиндексировано {num_chunks} чанков")
-else:
-    print(f"База уже содержит {stats['total_chunks']} чанков")
 
-# Запрос
-response = agent.query(
-    "Как уволить сотрудника если он не выполняет рабту?"
-)
+def main():
+    # Конфигурация (загружается из .env)
+    agent = LegalRAGAgent(
+        config=RAGConfig(documents_dir=Path("./legal_docs")),
+        yandex_config=YandexGPTConfig(),
+        qdrant_config=QdrantConfig(),
+    )
 
-print("=" * 50)
-print("ОТВЕТ:")
-print(response.answer)
-print("\nИСТОЧНИКИ:")
-for src in response.sources:
-    print(f"  - {src['filename']}, стр. {src['page']}")
+    print(f"Модель: {agent.yandex_config.model_uri}")
+    print(f"Qdrant: {agent.qdrant_config.host}:{agent.qdrant_config.port}")
 
-# Закрываем (убирает warning)
-agent.close()
+    # Проверка здоровья
+    print("\nПроверка подключения...")
+    if not agent.health_check():
+        print(" Ошибка подключения")
+        return
+
+    print(" Все сервисы работают!")
+
+    # Индексация
+    stats = agent.get_stats()
+    if stats["total_chunks"] == 0:
+        print("\nИндексация документов...")
+        num_chunks = agent.index_documents()
+        print(f" Проиндексировано {num_chunks} чанков")
+    else:
+        print(f"\nБаза содержит {stats['total_chunks']} чанков")
+
+    # Тестовый запрос
+    print("\n" + "=" * 50)
+    question = "Как уволить сотрудника если он не выполняет работу?"
+    print(f"Вопрос: {question}")
+    print("=" * 50)
+
+    response = agent.query(question)
+
+    print("\nОТВЕТ:")
+    print(response.answer)
+    print(f"\n Токенов: {response.tokens_used}")
+    
+    if response.sources:
+        print("\n ИСТОЧНИКИ:")
+        for src in response.sources:
+            score = f" ({src['score']:.3f})" if src.get('score') else ""
+            print(f"  - {src['filename']}, стр. {src['page']}{score}")
+
+    agent.close()
+    print("\n Готово!")
+
+
+if __name__ == "__main__":
+    main()
