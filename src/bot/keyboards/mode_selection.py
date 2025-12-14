@@ -5,6 +5,7 @@ mode_keyboard = ReplyKeyboardMarkup(
         [
             KeyboardButton(text="Задать вопрос"),
             KeyboardButton(text="Загрузить документ"),
+            KeyboardButton(text="Прочитать документ"),
         ]
     ],
     resize_keyboard=True,

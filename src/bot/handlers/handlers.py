@@ -17,6 +17,7 @@ class BotStates(StatesGroup):
     ask_mode = State()
     upload_mode = State()
     auth_token = State()
+    read_mode = State()
 
 
 @router.message(Command("start"))
@@ -78,6 +79,23 @@ async def select_ask_mode(message: Message, state: FSMContext):
     await message.answer("Слушаю вопросы.", reply_markup=mode_keyboard)
 
 
+@router.message(F.text == "Прочитать документ")
+async def select_read_mode(message: Message, state: FSMContext):
+    async for session in get_session():
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(message.from_user.id)
+    if not user:
+        await state.set_state(BotStates.auth_token)
+        await message.answer("Сначала токен доступа.")
+        return
+    await state.set_state(BotStates.read_mode)
+    await message.answer(
+        "Пришли строку источника, например:\n"
+        "твой_файл.pdf, стр. 1",
+        reply_markup=mode_keyboard,
+    )
+
+
 @router.message(F.text == "Загрузить документ")
 async def select_upload_mode(message: Message, state: FSMContext):
     async for session in get_session():
@@ -129,6 +147,62 @@ async def handle_ask(message: Message):
         await message.answer("Произошла ошибка при подключении к серверу.", reply_markup=mode_keyboard)
 
 
+@router.message(BotStates.read_mode, F.text)
+async def handle_read_source(message: Message, state: FSMContext):
+    text = message.text.strip()
+
+    import re
+    filename = None
+    page = None
+
+    patterns = [
+        r"(?i)(?:источник\s*\d+\s*:\s*)?([^,\s]+\.pdf)[^\d]*(?:стр\.?\s*)(\d+)",
+        r"(?i)([^,\s]+\.pdf)[^\d]*(\d+)",
+    ]
+
+    for pat in patterns:
+        m = re.search(pat, text)
+        if m:
+            filename = m.group(1)
+            try:
+                page = int(m.group(2))
+            except Exception:
+                page = None
+            break
+
+    if not filename or page is None:
+        await message.answer(
+            "Не смог распознать источник. Пришли в формате:\n"
+            "твой_файл.pdf, стр. 1",
+            reply_markup=mode_keyboard,
+        )
+        return
+
+    try:
+        async with aiohttp.ClientSession() as http:
+            async with http.post(
+                f"{settings.api_base_url}/source",
+                json={"filename": filename, "page": page},
+            ) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    chunks = data.get("chunks", [])
+                    if not chunks:
+                        await message.answer("Текст для указанной страницы не найден.", reply_markup=mode_keyboard)
+                        return
+
+                    content = chunks[0].get("text", "")
+
+                    for i in range(1, len(chunks)):
+                        content += "\n\n" + chunks[i].get("text", "")
+                    header = f"Фрагмент из {filename}, стр. {page}:\n\n"
+                    await message.answer(header + content, reply_markup=mode_keyboard)
+                else:
+                    await message.answer("Ошибка при получении источника.", reply_markup=mode_keyboard)
+    except Exception:
+        await message.answer("Произошла ошибка при подключении к серверу.", reply_markup=mode_keyboard)
+
+
 @router.message(BotStates.ask_mode, F.document)
 async def handle_ask_document(message: Message):
     await message.answer("В режиме вопроса отправьте текст или переключитесь в режим загрузки.", reply_markup=mode_keyboard)
@@ -160,7 +234,7 @@ async def handle_upload(message: Message):
                            filename=message.document.file_name)
             data.add_field('user_id', str(message.from_user.id))
 
-            await message.answer("Начал обработку файла. Это может занять время...")
+            await message.answer("Начал обработку файла. Это может занять время...", reply_markup=mode_keyboard)
 
             async with session.post(
                 f"{settings.api_base_url}/upload",
