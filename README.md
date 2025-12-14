@@ -86,7 +86,7 @@ graph TD
         end
         
         subgraph WebContainer["FastAPI Process"]
-            API["FastAPI App\nREST API"]
+            API["FastAPI App: REST API"]
             
             subgraph Routes["Routes Layer"]
                 AskRoute["POST /ask"]
@@ -111,8 +111,8 @@ graph TD
         end
 
         subgraph DataLayer["Data Storage"]
-            PG["PostgreSQL\nUsers, History"]
-            Qdrant["Qdrant\nVectors"]
+            PG["PostgreSQL: Users, History"]
+            Qdrant["Qdrant and Vectors"]
         end
     end
     
