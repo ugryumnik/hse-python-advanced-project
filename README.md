@@ -215,44 +215,46 @@ sequenceDiagram
 
 ```mermaid
 erDiagram
-    USERS {
+    users {
         int id PK
-        bigint telegram_id
-        string username
-        string role "admin, user"
+        bigint telegram_user_id UK "НЕ telegram_id!"
+        varchar(255) username
+        varchar(16) role "admin | user"
         timestamp created_at
     }
 
-    DOCUMENTS {
+    documents {
         int id PK
-        string filename
-        string file_path
-        string file_hash
+        varchar(512) filename
+        varchar(1024) file_path
+        varchar(64) file_hash
         timestamp uploaded_at
         int uploaded_by FK
-        string status "indexed, processing, failed"
+        varchar(32) status "processing | indexed | failed"
     }
 
-    CHAT_HISTORY {
+    chat_history {
         int id PK
         int user_id FK
-        string query
-        string answer
-        json used_sources
+        text query
+        text answer
+        jsonb used_sources "nullable"
         timestamp created_at
     }
 
-    QDRANT_COLLECTION {
+    qdrant_collection {
         uuid id PK
-        vector embedding
-        string payload_text
-        int document_id FK
-        int page_number
+        vector embedding "dim=256"
+        text payload_text
+        varchar filename
+        int page
+        varchar file_hash
+        varchar source
     }
 
-    USERS ||--o{ DOCUMENTS : uploads
-    USERS ||--o{ CHAT_HISTORY : asks
-    DOCUMENTS ||--o{ QDRANT_COLLECTION : contains_chunks
+    users ||--o{ documents : "uploads"
+    users ||--o{ chat_history : "asks"
+    documents ||--o{ qdrant_collection : "chunks"
 ```
 ---
 
