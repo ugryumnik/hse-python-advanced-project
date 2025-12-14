@@ -266,7 +266,7 @@ async def handle_generate(message: Message, state: FSMContext):
         return
 
     # Проверяем, не нажал ли пользователь на кнопку меню
-    if request_text in ["Задать вопрос", "Загрузить документ", "Прочитать документ", "Создать документ"]:
+    if request_text in ["Задать вопрос", "Загрузить документ", "Создать документ"]:
         return
 
     # Показываем, что бот работает
@@ -389,24 +389,6 @@ async def select_ask_mode(message: Message, state: FSMContext):
     await state.set_state(BotStates.ask_mode)
     await message.answer("Слушаю вопросы.",
                          reply_markup=mode_keyboard)
-
-
-@router.message(F.text == "Прочитать документ")
-async def select_read_mode(message: Message, state: FSMContext):
-    async for session in get_session():
-        repo = UserRepository(session)
-        user = await repo.get_by_telegram_id(message.from_user.id)
-    if not user:
-        await state.set_state(BotStates.auth_token)
-        await message.answer("Сначала токен доступа.")
-        return
-    await state.set_state(BotStates.read_mode)
-    await message.answer(
-        "Пришли строку источника, например:\n"
-        "твой_файл.pdf, стр. 1",
-        reply_markup=mode_keyboard,
-    )
-
 
 @router.message(F.text == "Загрузить документ")
 async def select_upload_mode(message: Message, state: FSMContext):

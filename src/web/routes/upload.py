@@ -1,19 +1,16 @@
-from pathlib import Path
 from fastapi import APIRouter, HTTPException, UploadFile, Form, Depends
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
+
 from infra.db.database import get_session
 from infra.db.user_repository import UserRepository
-
+from infra.llm.document_loader import (
+    SUPPORTED_EXTENSIONS,
+    ARCHIVE_EXTENSIONS,
+    COMPOUND_ARCHIVE_EXTENSIONS,
+)
 from core.services import IngestionService
 from web import get_ingestion_service
-
-SUPPORTED_EXTENSIONS = frozenset({
-    ".pdf", ".docx", ".doc", ".txt", ".md",
-    ".zip", ".tar", ".tgz", ".tbz2", ".txz",
-})
-
-COMPOUND_EXTENSIONS = frozenset({".tar.gz", ".tar.bz2", ".tar.xz"})
 
 
 class ProcessedFileModel(BaseModel):
@@ -33,19 +30,25 @@ class UploadResponse(BaseModel):
 
 upload_router = APIRouter()
 
+# Объединяем все поддерживаемые расширения
+ALL_SUPPORTED = SUPPORTED_EXTENSIONS | ARCHIVE_EXTENSIONS | COMPOUND_ARCHIVE_EXTENSIONS
 
-def is_supported_file(filename: str) -> tuple[bool, str]:
-    """Проверить поддержку файла"""
+
+def get_file_type(filename: str) -> tuple[bool, str]:
+    """Проверить поддержку файла и вернуть тип"""
     filename_lower = filename.lower()
 
-    for ext in COMPOUND_EXTENSIONS:
+    for ext in COMPOUND_ARCHIVE_EXTENSIONS:
+        if filename_lower.endswith(ext):
+            return True, "archive"
+
+    for ext in ARCHIVE_EXTENSIONS:
         if filename_lower.endswith(ext):
             return True, "archive"
 
     for ext in SUPPORTED_EXTENSIONS:
         if filename_lower.endswith(ext):
-            file_type = "archive" if ext in {".zip", ".tar", ".tgz", ".tbz2", ".txz"} else "document"
-            return True, file_type
+            return True, "document"
 
     return False, "unsupported"
 
@@ -64,21 +67,22 @@ async def upload_document(
         raise HTTPException(status_code=403, detail="Forbidden: admin only")
 
     filename = file.filename or "unknown"
-    is_valid, file_type = is_supported_file(filename)
+    is_valid, file_type = get_file_type(filename)
 
     if not is_valid:
         raise HTTPException(
             status_code=400,
-            detail=f"Неподдерживаемый формат файла."
+            detail="Неподдерживаемый формат файла."
         )
 
     try:
         result = await ingestion_service.processFile(file)
 
-        if result.file_type == "archive":
-            message = f"Архив '{filename}' успешно обработан"
-        else:
-            message = f"Документ '{filename}' успешно индексирован"
+        message = (
+            f"Архив '{filename}' успешно обработан"
+            if result.file_type == "archive"
+            else f"Документ '{filename}' успешно индексирован"
+        )
 
         return UploadResponse(
             message=message,

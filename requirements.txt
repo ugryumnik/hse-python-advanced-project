@@ -1,9 +1,7 @@
-
 # Core
 pydantic>=2.0
 pydantic-settings>=2.0
 python-dotenv>=1.0
-typing_extensions
 
 # Web / API
 fastapi
@@ -28,15 +26,9 @@ langchain-docling==2.0.0
 
 # Vector DB
 qdrant-client>=1.9.0
-
 numpy
 
 # Document processing
 PyMuPDF
 python-docx
 unstructured
-
-# Utils
-tqdm
-orjson
-rich
