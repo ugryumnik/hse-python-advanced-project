@@ -82,7 +82,7 @@ graph TD
         TG["Telegram Server"]
         
         subgraph BotContainer["Bot Process"]
-            Bot["Telegram Bot\nAiogram 3.x + FSM"]
+            Bot["Telegram Bot: Aiogram 3.x + FSM"]
         end
         
         subgraph WebContainer["FastAPI Process"]
