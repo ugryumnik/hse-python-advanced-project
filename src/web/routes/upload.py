@@ -6,7 +6,7 @@ from infra.db.database import get_session
 from infra.db.user_repository import UserRepository
 from infra.llm.document_loader import SUPPORTED_EXTENSIONS, ARCHIVE_EXTENSIONS
 from core.services import IngestionService
-from web import get_ingestion_service
+from .. import get_ingestion_service
 
 
 class UploadResponse(BaseModel):

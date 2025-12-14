@@ -9,7 +9,7 @@ from urllib.parse import quote
 from core.services import DocumentGenerationService
 from infra.db.database import get_session
 from infra.db.user_repository import UserRepository
-from web import get_doc_generation_service
+from .. import get_doc_generation_service
 
 
 class GenerateRequest(BaseModel):
@@ -30,6 +30,25 @@ class DocumentTypesResponse(BaseModel):
 
 
 generate_router = APIRouter()
+
+
+_DOCUMENT_TYPE_LABELS_RU: dict[str, str] = {
+    "contract": "Оферта",
+}
+
+
+def _localize_document_types(document_types: dict[str, str]) -> dict[str, str]:
+    value_translations = {
+        "Offer": "Оферта",
+    }
+
+    localized: dict[str, str] = {}
+    for doc_type, label in document_types.items():
+        localized[doc_type] = _DOCUMENT_TYPE_LABELS_RU.get(
+            doc_type,
+            value_translations.get(label, label),
+        )
+    return localized
 
 
 @generate_router.post("/generate", response_model=GenerateResponse)
@@ -101,4 +120,4 @@ async def get_document_types(
         doc_service: DocumentGenerationService = Depends(get_doc_generation_service),
 ):
     """Получить список поддерживаемых типов документов"""
-    return DocumentTypesResponse(types=doc_service.get_document_types())
+    return DocumentTypesResponse(types=_localize_document_types(doc_service.get_document_types()))

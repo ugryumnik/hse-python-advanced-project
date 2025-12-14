@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException, Depends
 from pydantic import BaseModel
 
 from core.services import RAGService
-from web import get_rag_service
+from .. import get_rag_service
 
 
 class SourceRequest(BaseModel):

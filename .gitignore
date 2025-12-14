@@ -5,3 +5,4 @@ data
 __pycache__/
 bvenv/
 models/
+.coverage
