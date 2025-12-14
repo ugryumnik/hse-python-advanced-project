@@ -4,7 +4,6 @@ import logging
 import uuid
 from typing import List, Any
 
-import numpy as np
 from langchain_core.documents import Document
 from qdrant_client import AsyncQdrantClient
 from qdrant_client.models import (
@@ -116,7 +115,7 @@ class QdrantVectorStore:
             ))
         return documents
 
-    async def similarity_search(
+    async def search(
         self,
         query: str,
         k: int | None = None,
@@ -144,90 +143,6 @@ class QdrantVectorStore:
         )
 
         return self._points_to_documents(results.points)
-
-    async def mmr_search(
-        self,
-        query: str,
-        k: int | None = None,
-        fetch_k: int = 20,
-        lambda_mult: float | None = None,
-    ) -> List[Document]:
-        """Асинхронный MMR поиск для разнообразия результатов"""
-        k = k or self.config.search_k
-        lambda_mult = lambda_mult or self.config.mmr_lambda
-        
-        client = await self._get_client()
-        
-        query_vector = np.array(await self.embeddings.aembed_query(query))
-        
-        results = await client.query_points(
-            collection_name=self.config.collection_name,
-            query=query_vector.tolist(),
-            limit=fetch_k,
-            with_vectors=True,
-            with_payload=True,
-        )
-        
-        if not results.points:
-            return []
-        
-        # MMR алгоритм
-        candidates = []
-        for point in results.points:
-            if point.vector:
-                candidates.append({
-                    "vector": np.array(point.vector),
-                    "payload": point.payload,
-                    "score": getattr(point, "score", 0),
-                })
-        
-        if not candidates:
-            return self._points_to_documents(results.points[:k])
-        
-        selected = []
-        remaining = list(range(len(candidates)))
-        
-        for _ in range(min(k, len(candidates))):
-            if not remaining:
-                break
-                
-            if not selected:
-                best_idx = max(remaining, key=lambda i: candidates[i]["score"] or 0)
-            else:
-                mmr_scores = []
-                for idx in remaining:
-                    relevance = float(np.dot(query_vector, candidates[idx]["vector"]))
-                    diversity = max(
-                        float(np.dot(candidates[idx]["vector"], candidates[sel]["vector"]))
-                        for sel in selected
-                    )
-                    mmr = lambda_mult * relevance - (1 - lambda_mult) * diversity
-                    mmr_scores.append((idx, mmr))
-                best_idx = max(mmr_scores, key=lambda x: x[1])[0]
-            
-            selected.append(best_idx)
-            remaining.remove(best_idx)
-        
-        documents = []
-        for idx in selected:
-            payload = candidates[idx]["payload"] or {}
-            documents.append(Document(
-                page_content=payload.get("text", ""),
-                metadata={
-                    "filename": payload.get("filename", ""),
-                    "source": payload.get("source", ""),
-                    "page": payload.get("page"),
-                    "score": candidates[idx]["score"],
-                },
-            ))
-        
-        return documents
-
-    async def search(self, query: str, k: int | None = None) -> List[Document]:
-        """Универсальный асинхронный поиск"""
-        if self.config.use_mmr:
-            return await self.mmr_search(query, k)
-        return await self.similarity_search(query, k)
 
     async def clear_collection(self) -> None:
         """Очистить коллекцию"""
