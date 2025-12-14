@@ -75,21 +75,15 @@ def get_supported_formats_text() -> str:
     return f" Документы: {docs}\n Архивы: {archives}"
 
 
-# ============================================================================
-# Создание inline-кнопок для источников
-# ============================================================================
-
 def create_sources_keyboard(sources: list[dict]) -> InlineKeyboardMarkup | None:
     """
     Создать inline-клавиатуру с кнопками-источниками.
-
-    Каждая кнопка позволяет получить текст соответствующего фрагмента.
     """
     if not sources:
         return None
 
     buttons = []
-    seen = set()  # Избегаем дублей
+    seen = set()
 
     for i, src in enumerate(sources):
         filename = src.get("filename", "?")
@@ -131,10 +125,7 @@ def create_sources_keyboard(sources: list[dict]) -> InlineKeyboardMarkup | None:
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 
-# ============================================================================
 # Состояния FSM
-# ============================================================================
-
 class BotStates(StatesGroup):
     ask_mode = State()
     upload_mode = State()
@@ -143,9 +134,7 @@ class BotStates(StatesGroup):
     generate_mode = State()
 
 
-# ============================================================================
 # Команды
-# ============================================================================
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, state: FSMContext):
@@ -207,14 +196,7 @@ async def cmd_formats(message: Message):
     )
 
 
-# ============================================================================
-# Выбор режима
-# ============================================================================
-
-# ============================================================================
 # Генерация документов
-# ============================================================================
-
 DOCUMENT_TYPES_TEXT = """📋 *Типы документов:*
 
 • *договор* — контракты между сторонами
@@ -410,10 +392,7 @@ async def select_upload_mode(message: Message, state: FSMContext):
     )
 
 
-# ============================================================================
 # Обработка вопросов
-# ============================================================================
-
 @router.message(BotStates.ask_mode, F.text)
 async def handle_ask(message: Message, state: FSMContext):
     question = message.text
@@ -454,7 +433,7 @@ async def handle_ask(message: Message, state: FSMContext):
                     # Создаём inline-кнопки только если есть источники
                     keyboard = None
                     if sources:
-                        response_text += "\n\n📚 *Источники* (нажми для просмотра):"
+                        response_text += "\n\n*Источники* (нажми для просмотра):"
                         keyboard = create_sources_keyboard(sources)
 
                     await message.answer(
@@ -467,23 +446,21 @@ async def handle_ask(message: Message, state: FSMContext):
     except Exception as e:
         await message.answer(f"Произошла ошибка при подключении к серверу.", reply_markup=mode_keyboard)
 
-# ============================================================================
-# Callback-обработчик для источников
-# ============================================================================
 
+# Callback-обработчик для источников
 @router.callback_query(F.data.startswith("src:"))
 async def handle_source_callback(callback: CallbackQuery, state: FSMContext):
     """
     Обработка нажатия на кнопку источника.
     Получает текст фрагмента и отправляет пользователю.
     """
-    await callback.answer()  # Убираем "часики" на кнопке
+    await callback.answer()
 
     # Извлекаем индекс источника
     try:
         index = int(callback.data.split(":")[1])
     except (ValueError, IndexError):
-        await callback.message.answer(" Ошибка: неверный формат источника.")
+        await callback.message.answer("Ошибка: неверный формат источника.")
         return
 
     # Получаем сохранённые источники из state
@@ -492,7 +469,7 @@ async def handle_source_callback(callback: CallbackQuery, state: FSMContext):
 
     if not sources or index >= len(sources):
         await callback.message.answer(
-            " Источники устарели. Задай вопрос заново.",
+            "Источники устарели. Задай вопрос заново.",
             reply_markup=mode_keyboard
         )
         return
@@ -503,7 +480,7 @@ async def handle_source_callback(callback: CallbackQuery, state: FSMContext):
     archive = source.get("archive")
 
     if not filename:
-        await callback.message.answer(" Ошибка: имя файла не найдено.")
+        await callback.message.answer("Ошибка: имя файла не найдено.")
         return
 
     # Показываем индикатор загрузки
@@ -564,10 +541,7 @@ async def handle_source_callback(callback: CallbackQuery, state: FSMContext):
         )
 
 
-# ============================================================================
-# Чтение источников (ручной режим)
-# ============================================================================
-
+# Чтение источников
 @router.message(BotStates.read_mode, F.text)
 async def handle_read_source(message: Message, state: FSMContext):
     text = message.text.strip()
@@ -594,7 +568,7 @@ async def handle_read_source(message: Message, state: FSMContext):
     if not filename:
         await message.answer(
             "Не смог распознать источник. Пришли в формате:\n"
-            "`документ.pdf, стр. 1`\n\n"
+            "`документ.pdf (стр. 1)`\n\n"
             "Или просто имя файла: `документ.pdf`",
             reply_markup=mode_keyboard,
             parse_mode="Markdown"
@@ -629,7 +603,7 @@ async def handle_read_source(message: Message, state: FSMContext):
                     if len(content) > 3500:
                         content = content[:3500] + "\n\n... _(текст сокращён)_"
 
-                    header = f"📄 *{filename}*, стр. {page}\n\n"
+                    header = f"*{filename}*, стр. {page}\n\n"
 
                     await message.answer(
                         header + content,
@@ -648,10 +622,7 @@ async def handle_read_source(message: Message, state: FSMContext):
         )
 
 
-# ============================================================================
 # Загрузка файлов
-# ============================================================================
-
 @router.message(BotStates.ask_mode, F.document)
 async def handle_ask_document(message: Message):
     await message.answer(
