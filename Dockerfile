@@ -11,10 +11,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the rest of the code
 COPY src/ ./src/
 
-COPY .env ./
-
-# Set environment variables (if needed)
-# ENV ...
-
 # Run the bot app
 CMD ["python", "src/main.py"]
