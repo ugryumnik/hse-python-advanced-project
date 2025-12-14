@@ -228,26 +228,53 @@ erDiagram
 ## 5. Организация кода (Project Structure)
 
 ```text
-src/
-├── bot/                 # Адаптер: Telegram Bot (aiogram)
-│   ├── handlers/        # Обработчики команд
-│   ├── keyboards/       # Кнопки
-│   └── middlewares/     # Логирование, аутентификация
-├── web/                 # Адаптер: REST API (FastAPI)
-│   └── routes/          # Эндпоинты
-├── core/                # Ядро приложения
-│   ├── domain/          # Сущности (User, Document, SearchResult)
-│   ├── services/        # Бизнес-логика (RAGService, IngestionService)
-│   └── interfaces/      # Абстрактные интерфейсы (ILLMProvider, IVectorDB)
-├── infra/               # Инфраструктура и реализации интерфейсов
-│   ├── db/              # SQLAlchemy модели и репозитории
-│   ├── vector/          # Клиент Qdrant
-│   ├── llm/             # Клиенты YandexGPT/Local
-│   ├── parser/          # Логика Docling / Text splitters
-│   └── di/              # Конфигурация Dishka (IOC контейнер)
-├── migrations/          # Alembic миграции
-├── config.py            # Настройки (pydantic settings)
-└── main.py              # Точка входа
+├── bot/
+│   ├── __init__.py
+│   ├── handlers.py              # Все хендлеры + FSM
+│   ├── keyboards/
+│   │   ├── __init__.py
+│   │   └── mode_selection.py    # ReplyKeyboardMarkup
+│   └── middlewares/
+│       ├── __init__.py
+│       └── logging.py
+│
+├── web/
+│   ├── __init__.py              # FastAPI app + lifespan + DI функции
+│   └── routes/
+│       ├── __init__.py          # APIRouter сборка
+│       ├── ask.py               # POST /ask
+│       ├── upload.py            # POST /upload
+│       ├── source.py            # POST /source
+│       └── generate.py          # POST /generate, /generate/pdf, /generate/types
+│
+├── core/
+│   ├── __init__.py
+│   └── services/
+│       ├── __init__.py
+│       ├── RAGService.py
+│       ├── IngestionService.py
+│       └── DocumentGenerationService.py
+│
+├── infra/
+│   ├── llm/
+│   │   ├── __init__.py
+│   │   ├── agent.py             # LegalRAGAgent - главный класс
+│   │   ├── config.py            # YandexGPTConfig, QdrantConfig, RAGConfig
+│   │   ├── document_loader.py   # LegalDocumentLoader + ArchiveHandler
+│   │   ├── embeddings.py        # YandexEmbeddings
+│   │   ├── prompts.py           # Все промпты
+│   │   ├── vector_store.py      # QdrantVectorStore
+│   │   └── yandex_gpt.py        # YandexGPTClient
+│   │
+│   └── db/
+│       ├── __init__.py
+│       ├── database.py          # SQLAlchemy async engine
+│       ├── models.py            # User, Document, ChatHistory
+│       ├── user_repository.py
+│       ├── document_repository.py
+│       └── chat_history_repository.py
+│
+└── config.py                    # Settings (pydantic-settings)
 ```
 
 ---
