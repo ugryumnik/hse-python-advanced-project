@@ -153,30 +153,58 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-    participant User as Юрист
-    participant Bot as Telegram Bot
-    participant Backend as FastAPI Backend
-    participant Embed as Embedder
-    participant VectorDB as Qdrant
-    participant LLM as LLM (Yandex)
+    participant User as Пользователь
+    participant Bot as TelegramBot
+    participant API as FastAPI
+    participant Agent as LegalRAGAgent
+    participant Embed as YandexEmbeddings
+    participant Qdrant as Qdrant
+    participant GPT as YandexGPT
 
-    User->>Bot: Вопрос: "Штраф за просрочку?"
-    Bot->>Backend: POST /ask (query, user_id)
+    User->>Bot: Вопрос о том, как уволить сотрудника
+    Bot->>API: POST ask (query, user_id)
     
-    activate Backend
-    Backend->>Embed: Создать вектор вопроса
-    Embed-->>Backend: vector[...]
+    activate API
+    API->>Agent: handleQuery(question)
     
-    Backend->>VectorDB: Search(vector, top_k=5)
-    VectorDB-->>Backend: Список чанков + metadata (стр, док)
+    activate Agent
     
-    Backend->>LLM: Prompt: "Ответь, используя контекст: [Chunks]. Вопрос: ..."
-    LLM-->>Backend: Текстовый ответ
+    Note over Agent: Проверка, является ли вопрос разговорным
+    alt Разговорный вопрос
+        Agent->>GPT: conversational system prompt
+        GPT-->>Agent: ответ без использования RAG
+    else Юридический вопрос
+        Agent->>Embed: embedQuery(question)
+        Embed-->>Agent: query vector
+        
+        Agent->>Qdrant: search vector top 5
+        Qdrant-->>Agent: документы и оценки
+        
+        Note over Agent: Фильтрация по score >= 0.25
+        
+        alt Нет релевантных документов
+            Agent-->>API: сообщение об отсутствии информации
+        else Есть релевантные документы
+            Agent->>Agent: formatContext(documents)
+            Agent->>GPT: legal system prompt с RAG контекстом
+            GPT-->>Agent: ответ с источниками
+        end
+    end
     
-    Backend-->>Bot: Ответ + Список источников
-    deactivate Backend
+    deactivate Agent
     
-    Bot-->>User: Ответ с цитатами
+    API-->>Bot: ответ и список источников
+    deactivate API
+    
+    Bot-->>User: Ответ и inline кнопки источников
+    
+    opt Пользователь выбрал источник
+        User->>Bot: callback source index
+        Bot->>API: POST source (filename, page)
+        API-->>Bot: текстовые фрагменты
+        Bot-->>User: полный текст фрагмента
+    end
+
 ```
 
 ---
