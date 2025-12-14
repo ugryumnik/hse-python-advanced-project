@@ -78,70 +78,73 @@
 
 ```mermaid
 graph TD
-    subgraph Infrastructure [Инфраструктура Docker]
-        TG[Telegram Server]
+    subgraph Infrastructure["Docker Compose"]
+        TG["Telegram Server"]
         
-        subgraph Application [Application Container]
-           Bot[<b>Telegram Bot</b><br/>Aiogram]
-           
-           subgraph WebAPI [FastAPI Backend]
-               API_Entry[<b>Main App</b><br/>Entrypoint]
-               
-               subgraph InterfaceLayer [Interface Adapters]
-                   Handler[<b>Request Handlers</b><br/>Controllers]
-               end
-               
-               subgraph LogicLayer [Business Logic]
-                   Service[<b>RAG Service</b><br/>Orchestrator]
-                   Parser[<b>Ingestion Service</b><br/>Doc Processing]
-               end
-           end
-           
-           DI[<b>DI Container</b><br/>Dishka]
-       end
-
-        subgraph DataSources [Storage Services]
-            PG[(<b>PostgreSQL</b><br/>Users, History, Metadata)]
-            Qdrant[(<b>Qdrant</b><br/>Vector Store)]
+        subgraph BotContainer["Bot Process"]
+            Bot["Telegram Bot\nAiogram 3.x + FSM"]
         end
         
-        subgraph ExternalAI [External / Local AI]
-            LLM_API[LLM API<br/>YandexGPT]
-            Embed_Model[Embedding Model<br/>HuggingFace/Local]
+        subgraph WebContainer["FastAPI Process"]
+            API["FastAPI App\nREST API"]
+            
+            subgraph Routes["Routes Layer"]
+                AskRoute["POST /ask"]
+                UploadRoute["POST /upload"]
+                SourceRoute["GET /source"]
+                GenerateRoute["POST /generate"]
+            end
+            
+            subgraph Services["Core Services"]
+                RAGSvc["RAGService"]
+                IngestionSvc["IngestionService"]
+                DocGenSvc["DocumentGenerationService"]
+            end
+            
+            subgraph Agent["LegalRAGAgent"]
+                GPTClient["YandexGPTClient"]
+                Embeddings["YandexEmbeddings"]
+                VectorStore["QdrantVectorStore"]
+                DocLoader["LegalDocumentLoader"]
+                TextSplitter["RecursiveCharacterTextSplitter"]
+            end
+        end
+
+        subgraph DataLayer["Data Storage"]
+            PG["PostgreSQL\nUsers, History"]
+            Qdrant["Qdrant\nVectors"]
         end
     end
+    
+    subgraph External["External APIs"]
+        YandexGPT["YandexGPT API"]
+        YandexEmbed["Yandex Embeddings API"]
+    end
 
-    %% --- Внешние связи ---
     TG <--> Bot
-    Bot -- "HTTP POST /ask, /upload" --> API_Entry
+    Bot -->|HTTP| API
     
-    %% --- Внутри FastAPI ---
-    API_Entry -- Route --> Handler
+    API --> Routes
+    Routes --> Services
     
-    %% Handler распределяет задачи
-    Handler -- "Query (Ask)" --> Service
-    Handler -- "File (Upload)" --> Parser
+    RAGSvc --> Agent
+    IngestionSvc --> Agent
+    DocGenSvc --> Agent
     
-    %% --- Внедрение зависимостей (DI) ---
-    DI -.-> Handler
-    DI -.-> Service
-    DI -.-> Parser
+    GPTClient --> YandexGPT
+    Embeddings --> YandexEmbed
+    VectorStore --> Qdrant
     
-    %% --- Логика RAG Service (Поиск) ---
-    Service -- "Embed Query" --> Embed_Model
-    Service -- "Generate Answer" --> LLM_API
-    Service -- "Search Context" --> Qdrant
-    Service -- "Read/Write History" --> PG
+    API --> PG
     
-    %% --- Логика Parser/Ingestion (Загрузка) ---
-    %% Исправлено: Парсер сам ходит в модели и базы
-    Parser -- "Embed Chunks" --> Embed_Model
-    Parser -- "Save Vectors" --> Qdrant
-    Parser -- "Save File Meta" --> PG
+    classDef external fill:#ffe0b2,stroke:#e65100
+    classDef storage fill:#e1f5fe,stroke:#01579b
+    classDef service fill:#e8f5e9,stroke:#2e7d32
     
-    %% --- Стили ---
-    classDef docker fill:#e1f5fe,stroke:#01579b,stroke-width:2px;
-    class Application,DataSources,ExternalAI docker;
+    class YandexGPT,YandexEmbed external
+    class PG,Qdrant storage
+    class RAGSvc,IngestionSvc,DocGenSvc service
+
 ```
 
 ### 3.3. Схема RAG-процесса (Sequence Diagram)
