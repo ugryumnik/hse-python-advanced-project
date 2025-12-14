@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import StatesGroup, State
-from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton, BufferedInputFile
 import aiohttp
 
 from bot.keyboards import mode_keyboard
@@ -140,6 +140,7 @@ class BotStates(StatesGroup):
     upload_mode = State()
     auth_token = State()
     read_mode = State()
+    generate_mode = State()
 
 
 # ============================================================================
@@ -209,6 +210,172 @@ async def cmd_formats(message: Message):
 # ============================================================================
 # Выбор режима
 # ============================================================================
+
+# ============================================================================
+# Генерация документов
+# ============================================================================
+
+DOCUMENT_TYPES_TEXT = """📋 *Типы документов:*
+
+• *договор* — контракты между сторонами
+• *заявление* — обращения, ходатайства
+• *приказ* — распоряжения руководства
+• *акт* — приёма-передачи, выполненных работ
+• *доверенность* — полномочия представителя
+• *претензия* — досудебные требования
+• *уведомление* — информирование сторон
+• *соглашение* — дополнительные, о расторжении
+• *протокол* — собраний, совещаний
+• *служебная записка* — внутренняя переписка
+• *объяснительная* — пояснения по ситуации
+
+Опиши, какой документ тебе нужен, и я его сгенерирую."""
+
+
+@router.message(F.text == "Создать документ")
+async def select_generate_mode(message: Message, state: FSMContext):
+    async for session in get_session():
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(message.from_user.id)
+    if not user:
+        await state.set_state(BotStates.auth_token)
+        await message.answer("Сначала токен доступа.")
+        return
+
+    await state.set_state(BotStates.generate_mode)
+    await message.answer(
+        DOCUMENT_TYPES_TEXT + "\n\n"
+                              "Например: _Составь договор аренды квартиры между физическими лицами_",
+        reply_markup=mode_keyboard,
+        parse_mode="Markdown"
+    )
+
+
+@router.message(BotStates.generate_mode, F.text)
+async def handle_generate(message: Message, state: FSMContext):
+    """Обработка запроса на генерацию документа"""
+    request_text = message.text.strip()
+    user_id = message.from_user.id
+
+    # Проверка авторизации
+    async for session in get_session():
+        repo = UserRepository(session)
+        user = await repo.get_by_telegram_id(user_id)
+    if not user:
+        await message.answer("Сначала токен доступа.")
+        return
+
+    # Проверяем, не нажал ли пользователь на кнопку меню
+    if request_text in ["Задать вопрос", "Загрузить документ", "Прочитать документ", "Создать документ"]:
+        return
+
+    # Показываем, что бот работает
+    await message.bot.send_chat_action(message.chat.id, "typing")
+
+    status_msg = await message.answer(
+        "Генерирую документ...\n"
+        "Это может занять некоторое время.",
+        parse_mode="Markdown"
+    )
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=120)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            # Запрос на генерацию PDF
+            async with session.post(
+                    f"{settings.api_base_url}/generate/pdf",
+                    json={
+                        "request": request_text,
+                        "user_id": user_id,
+                        "use_rag": True,
+                    }
+            ) as resp:
+                if resp.status == 200:
+                    # Получаем PDF
+                    pdf_bytes = await resp.read()
+
+                    # Получаем имя файла из заголовка
+                    content_disp = resp.headers.get("Content-Disposition", "")
+                    filename = "document.pdf"
+                    if "filename=" in content_disp:
+                        try:
+                            filename = content_disp.split("filename=")[1].strip('"')
+                        except:
+                            pass
+
+                    # Удаляем статусное сообщение
+                    await status_msg.delete()
+
+                    # Отправляем PDF файл
+                    pdf_file = BufferedInputFile(
+                        file=pdf_bytes,
+                        filename=filename
+                    )
+
+                    await message.answer_document(
+                        document=pdf_file,
+                        caption=(
+                            f"Документ сгенерирован!\n\n"
+                            f"_FOR REFERENCE ONLY — перед использованием "
+                            f"рекомендуется консультация с юристом._"
+                        ),
+                        parse_mode="Markdown",
+                        reply_markup=mode_keyboard
+                    )
+
+                    # Также отправляем Markdown версию (опционально)
+                    async with session.post(
+                            f"{settings.api_base_url}/generate",
+                            json={
+                                "request": request_text,
+                                "user_id": user_id,
+                                "use_rag": False,  # Уже использовали
+                            }
+                    ) as md_resp:
+                        if md_resp.status == 200:
+                            md_data = await md_resp.json()
+                            markdown_content = md_data.get("markdown", "")
+
+                            # Отправляем как текстовый файл для редактирования
+                            if len(markdown_content) > 100:
+                                md_file = BufferedInputFile(
+                                    file=markdown_content.encode("utf-8"),
+                                    filename=filename.replace(".pdf", ".md")
+                                )
+                                await message.answer_document(
+                                    document=md_file,
+                                    caption="Markdown версия для редактирования",
+                                    reply_markup=mode_keyboard
+                                )
+                else:
+                    await status_msg.delete()
+                    error_text = await resp.text()
+                    await message.answer(
+                        f"Ошибка генерации: {error_text[:200]}",
+                        reply_markup=mode_keyboard
+                    )
+
+    except asyncio.TimeoutError:
+        await status_msg.delete()
+        await message.answer(
+            "Превышено время ожидания. Попробуй упростить запрос.",
+            reply_markup=mode_keyboard
+        )
+    except Exception as e:
+        await status_msg.delete()
+        await message.answer(
+            f"Ошибка: {str(e)[:100]}",
+            reply_markup=mode_keyboard
+        )
+
+
+@router.message(BotStates.generate_mode, F.document)
+async def handle_generate_document(message: Message):
+    await message.answer(
+        "В режиме генерации отправь текстовое описание документа.\n"
+        "Для загрузки файлов переключись в режим «Загрузить документ».",
+        reply_markup=mode_keyboard
+    )
 
 @router.message(F.text == "Задать вопрос")
 async def select_ask_mode(message: Message, state: FSMContext):
