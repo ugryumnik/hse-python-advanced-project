@@ -31,3 +31,5 @@ numpy
 # Document processing
 PyMuPDF
 python-docx
+markdown
+weasyprint
