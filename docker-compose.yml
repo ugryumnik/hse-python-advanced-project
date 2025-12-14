@@ -1,6 +1,21 @@
 version: '3.8'
 
 services:
+  bot:
+    build: .
+    container_name: bot-app
+    depends_on:
+      - qdrant
+      - postgres
+    environment:
+      - PYTHONUNBUFFERED=1
+    volumes:
+      - ./src:/app/src
+    command: ["python", "src/main.py"]
+    restart: unless-stopped
+    # Uncomment if you want to expose a port, e.g. for FastAPI
+    # ports:
+    #   - "8000:8000"
   qdrant:
     image: qdrant/qdrant:latest
     ports:
