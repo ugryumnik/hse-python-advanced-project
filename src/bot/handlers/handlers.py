@@ -150,13 +150,17 @@ async def handle_upload(message: Message):
         file_content = await message.bot.download(message.document)
     except Exception as e:
         await message.answer("Произошла ошибка при загрузке файла.", reply_markup=mode_keyboard)
+        return
 
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=1800)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             data = aiohttp.FormData()
             data.add_field('file', file_content,
                            filename=message.document.file_name)
             data.add_field('user_id', str(message.from_user.id))
+
+            await message.answer("Начал обработку файла. Это может занять время...")
 
             async with session.post(
                 f"{settings.api_base_url}/upload",

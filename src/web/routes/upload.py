@@ -24,16 +24,15 @@ async def upload_document(
     ingestion_service: IngestionService = Depends(get_ingestion_service),
     session: AsyncSession = Depends(get_session)
 ):
-    # Authorize: only admin can upload
     repo = UserRepository(session)
     user = await repo.get_by_telegram_id(user_id)
     if not user or user.role != "admin":
         raise HTTPException(status_code=403, detail="Forbidden: admin only")
     try:
-        chunks_count = await ingestion_service.process_file(file)
+        chunks_count = await ingestion_service.processFile(file)
         
         return UploadResponse(
-            message=f"Document '{file.filename}' indexed successfully",
+            message=f"Успешно индексирован документ '{file.filename}'",
             chunks_added=chunks_count
         )
     except Exception as e:
