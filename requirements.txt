@@ -31,4 +31,3 @@ numpy
 # Document processing
 PyMuPDF
 python-docx
-unstructured

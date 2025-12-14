@@ -78,9 +78,7 @@ class ChunkingConfig(BaseModel):
     """Конфигурация разбиения текста"""
     chunk_size: int = 1000
     chunk_overlap: int = 200
-    separators: list[str] = Field(
-        default=["\n\n", "\n", ".", "!", "?", ";", " "]
-    )
+    separators: list[str] = Field(default=["\n\n", "\n", ".", " "])
 
 
 class RAGConfig(BaseModel):
