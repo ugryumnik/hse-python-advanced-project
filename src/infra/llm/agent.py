@@ -124,17 +124,26 @@ class LegalRAGAgent:
         """Извлечь уникальные источники"""
         seen = set()
         sources = []
-        
+
         for doc in docs:
-            key = (doc.metadata.get("filename", ""), doc.metadata.get("page", 0))
+            filename = doc.metadata.get("filename", "")
+            page = doc.metadata.get("page", 0)
+            archive = doc.metadata.get("archive_source")  # Добавляем архив
+
+            key = (filename, page, archive)
             if key not in seen:
                 seen.add(key)
-                sources.append({
-                    "filename": doc.metadata.get("filename", "Неизвестно"),
-                    "page": doc.metadata.get("page"),
+                source_info = {
+                    "filename": filename or "Неизвестно",
+                    "page": page,
                     "score": doc.metadata.get("score"),
-                })
-        
+                }
+                # Добавляем информацию об архиве если есть
+                if archive:
+                    source_info["archive"] = archive
+
+                sources.append(source_info)
+
         return sources
 
     async def query(self, question: str, k: int | None = None) -> RAGResponse:

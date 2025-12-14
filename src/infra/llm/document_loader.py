@@ -48,13 +48,21 @@ COMPOUND_ARCHIVE_EXTENSIONS = frozenset({
 MAX_ARCHIVE_SIZE_MB = 500
 MAX_ARCHIVE_SIZE = MAX_ARCHIVE_SIZE_MB * 1024 * 1024
 MAX_FILES_IN_ARCHIVE = 1000
-MAX_EXTRACTION_RATIO = 100  # Защита от zip-бомб
-MAX_NESTED_DEPTH = 3  # Максимальная вложенность архивов
+MAX_EXTRACTION_RATIO = 100
+MAX_NESTED_DEPTH = 3
 
 
 # ============================================================================
 # Модели данных
 # ============================================================================
+
+@dataclass
+class ProcessedFileInfo:
+    """Информация об обработанном файле"""
+    filename: str
+    chunks_count: int
+    archive_path: str | None = None  # Путь внутри архива (если из архива)
+
 
 @dataclass
 class ArchiveProcessingStats:
@@ -65,6 +73,9 @@ class ArchiveProcessingStats:
     nested_archives: int = 0
     errors: list[str] = field(default_factory=list)
 
+    # Новое: список обработанных файлов
+    processed_files: list[ProcessedFileInfo] = field(default_factory=list)
+
     def merge(self, other: "ArchiveProcessingStats") -> None:
         """Объединить статистику"""
         self.files_processed += other.files_processed
@@ -72,6 +83,21 @@ class ArchiveProcessingStats:
         self.files_failed += other.files_failed
         self.nested_archives += other.nested_archives
         self.errors.extend(other.errors)
+        self.processed_files.extend(other.processed_files)
+
+    def add_processed_file(
+        self,
+        filename: str,
+        chunks_count: int,
+        archive_chain: list[str] | None = None
+    ) -> None:
+        """Добавить информацию об обработанном файле"""
+        archive_path = " → ".join(archive_chain) if archive_chain else None
+        self.processed_files.append(ProcessedFileInfo(
+            filename=filename,
+            chunks_count=chunks_count,
+            archive_path=archive_path,
+        ))
 
 
 class ArchiveError(Exception):
@@ -91,17 +117,8 @@ def compute_file_hash(file_path: Path) -> str:
 class ArchiveHandler:
     """
     Безопасный обработчик архивов.
-
-    Поддерживает: ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ
-
-    Защита от:
-    - Zip-бомб (проверка коэффициента сжатия)
-    - Path traversal атак
-    - Символических ссылок
-    - Слишком больших архивов
     """
 
-    # Системные файлы для пропуска
     SKIP_NAMES = frozenset({
         "__MACOSX", ".DS_Store", "Thumbs.db", "desktop.ini", ".git", ".svn"
     })
@@ -112,7 +129,6 @@ class ArchiveHandler:
         """Проверить, является ли файл поддерживаемым архивом"""
         name_lower = path.name.lower()
 
-        # Составные расширения (.tar.gz, .tar.bz2, .tar.xz)
         for ext in COMPOUND_ARCHIVE_EXTENSIONS:
             if name_lower.endswith(ext):
                 return True
@@ -143,7 +159,6 @@ class ArchiveHandler:
         if member_path.startswith("/") or ".." in member_path:
             raise ArchiveError(f"Небезопасный путь: {member_path}")
 
-        # Windows абсолютные пути
         if len(member_path) > 1 and member_path[1] == ":":
             raise ArchiveError(f"Абсолютный Windows путь: {member_path}")
 
@@ -157,7 +172,6 @@ class ArchiveHandler:
                 f"Слишком много файлов: {len(members)} (макс. {MAX_FILES_IN_ARCHIVE})"
             )
 
-        # Проверка на zip-бомбу
         archive_size = archive_path.stat().st_size
         if archive_size > 0:
             total_uncompressed = sum(m.file_size for m in members)
@@ -204,16 +218,7 @@ class ArchiveHandler:
 
     @classmethod
     def extract(cls, archive_path: Path) -> Path:
-        """
-        Извлечь архив во временную директорию.
-
-        Returns:
-            Path к временной директории. Вызывающий код должен вызвать cleanup().
-
-        Raises:
-            ArchiveError: При ошибках валидации
-        """
-        # Проверка размера
+        """Извлечь архив во временную директорию."""
         size = archive_path.stat().st_size
         if size > MAX_ARCHIVE_SIZE:
             raise ArchiveError(
@@ -244,7 +249,6 @@ class ArchiveHandler:
 
                 with tarfile.open(archive_path, mode) as tf:
                     cls._validate_tar(tf)
-                    # Python 3.12+ имеет filter параметр
                     try:
                         tf.extractall(temp_dir, filter="data")
                     except TypeError:
@@ -280,7 +284,6 @@ class ArchiveHandler:
         if any(path.name.startswith(p) for p in cls.SKIP_PREFIXES):
             return True
 
-        # Файлы в системных директориях
         for part in path.parts:
             if part in cls.SKIP_NAMES or any(part.startswith(p) for p in cls.SKIP_PREFIXES):
                 return True
@@ -298,24 +301,6 @@ class ArchiveHandler:
 class LegalDocumentLoader:
     """
     Загрузчик юридических документов с поддержкой архивов.
-
-    Поддерживаемые форматы документов:
-    - PDF, DOCX, DOC, TXT, MD
-
-    Поддерживаемые архивы:
-    - ZIP, TAR, TAR.GZ, TAR.BZ2, TAR.XZ
-    - Вложенные архивы (до 3 уровней)
-
-    Пример использования:
-        loader = LegalDocumentLoader(Path("./documents"))
-
-        # Загрузка всей директории
-        for doc in loader.load_directory():
-            print(doc.metadata["filename"])
-
-        # Загрузка одного файла или архива
-        docs = loader.load_file(Path("contract.pdf"))
-        docs = loader.load_file(Path("documents.zip"))
     """
 
     def __init__(self, documents_dir: Path | str):
@@ -323,16 +308,8 @@ class LegalDocumentLoader:
         self.documents_dir.mkdir(parents=True, exist_ok=True)
         self._archive_handler = ArchiveHandler()
 
-
     def load_directory(self) -> Iterator[Document]:
-        """
-        Загрузить все документы из директории.
-
-        Автоматически обрабатывает архивы.
-
-        Yields:
-            Document: Загруженные документы
-        """
+        """Загрузить все документы из директории."""
         regular_files: list[Path] = []
         archive_files: list[Path] = []
 
@@ -351,7 +328,6 @@ class LegalDocumentLoader:
             f"Найдено: {len(regular_files)} документов, {len(archive_files)} архивов"
         )
 
-        # Обычные документы
         for file_path in regular_files:
             try:
                 yield from self._load_single_file(file_path)
@@ -359,7 +335,6 @@ class LegalDocumentLoader:
             except Exception as e:
                 logger.error(f"Пропущен {file_path.name}: {e}")
 
-        # Архивы
         for archive_path in archive_files:
             try:
                 yield from self._load_archive(archive_path)
@@ -367,19 +342,7 @@ class LegalDocumentLoader:
                 logger.error(f"Ошибка архива {archive_path.name}: {e}")
 
     def load_file(self, file_path: Path | str) -> list[Document]:
-        """
-        Загрузить один файл или архив.
-
-        Args:
-            file_path: Путь к файлу
-
-        Returns:
-            Список документов
-
-        Raises:
-            FileNotFoundError: Если файл не существует
-            ArchiveError: При ошибках обработки архива
-        """
+        """Загрузить один файл или архив."""
         file_path = Path(file_path)
 
         if not file_path.exists():
@@ -394,15 +357,7 @@ class LegalDocumentLoader:
         self,
         archive_path: Path | str
     ) -> tuple[list[Document], ArchiveProcessingStats]:
-        """
-        Загрузить архив с детальной статистикой.
-
-        Args:
-            archive_path: Путь к архиву
-
-        Returns:
-            Tuple[список документов, статистика обработки]
-        """
+        """Загрузить архив с детальной статистикой."""
         archive_path = Path(archive_path)
 
         if not archive_path.exists():
@@ -462,7 +417,6 @@ class LegalDocumentLoader:
             "archives": sorted(ARCHIVE_EXTENSIONS | COMPOUND_ARCHIVE_EXTENSIONS),
         }
 
-
     def _load_single_file(
         self,
         file_path: Path,
@@ -477,7 +431,6 @@ class LegalDocumentLoader:
 
         file_hash = compute_file_hash(file_path)
 
-        # Пробуем Docling для PDF/DOCX/DOC
         if suffix in {".pdf", ".docx", ".doc"}:
             try:
                 logger.debug(f"Docling: загрузка {file_path.name}")
@@ -490,7 +443,6 @@ class LegalDocumentLoader:
             except Exception as e:
                 logger.warning(f"Docling fallback для {file_path.name}: {e}")
 
-        # Fallback на стандартные загрузчики
         loader_class = LOADERS.get(suffix, UnstructuredFileLoader)
 
         try:
@@ -511,7 +463,6 @@ class LegalDocumentLoader:
 
         docs = loader.load()
 
-        # Нормализация метаданных
         for doc in docs:
             dl_meta = doc.metadata.get("dl_meta", {})
             page_no = None
@@ -547,7 +498,6 @@ class LegalDocumentLoader:
             })
             doc.metadata.setdefault("page", None)
 
-            # Добавляем информацию об архиве
             if archive_chain:
                 doc.metadata["archive_source"] = " → ".join(archive_chain)
 
@@ -568,24 +518,12 @@ class LegalDocumentLoader:
         depth: int = 0,
         stats: ArchiveProcessingStats | None = None,
     ) -> Iterator[Document]:
-        """
-        Рекурсивная обработка архива.
-
-        Args:
-            archive_path: Путь к архиву
-            archive_chain: Цепочка родительских архивов
-            depth: Текущая глубина вложенности
-            stats: Объект статистики для накопления
-
-        Yields:
-            Document: Документы из архива
-        """
+        """Рекурсивная обработка архива."""
         if stats is None:
             stats = ArchiveProcessingStats()
 
         current_chain = (archive_chain or []) + [archive_path.name]
 
-        # Проверка глубины вложенности
         if depth >= MAX_NESTED_DEPTH:
             error = (
                 f"Превышена макс. глубина вложенности ({MAX_NESTED_DEPTH}): "
@@ -606,7 +544,6 @@ class LegalDocumentLoader:
             )
 
             for file_path in files:
-                # Вложенный архив
                 if ArchiveHandler.is_archive(file_path):
                     stats.nested_archives += 1
                     logger.debug(f"Вложенный архив: {file_path.name}")
@@ -619,7 +556,6 @@ class LegalDocumentLoader:
                     )
                     continue
 
-                # Обычный файл
                 suffix = file_path.suffix.lower()
                 if suffix not in SUPPORTED_EXTENSIONS:
                     stats.files_skipped += 1
@@ -633,6 +569,12 @@ class LegalDocumentLoader:
 
                     if documents:
                         stats.files_processed += 1
+                        # Добавляем информацию о файле в статистику
+                        stats.add_processed_file(
+                            filename=file_path.name,
+                            chunks_count=len(documents),
+                            archive_chain=current_chain
+                        )
                         yield from documents
                     else:
                         stats.files_skipped += 1
