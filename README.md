@@ -217,7 +217,7 @@ sequenceDiagram
 erDiagram
     users {
         int id PK
-        bigint telegram_user_id UK "НЕ telegram_id!"
+        bigint telegram_user_id UK
         varchar(255) username
         varchar(16) role "admin | user"
         timestamp created_at
