@@ -419,6 +419,10 @@ async def handle_ask(message: Message, state: FSMContext):
     question = message.text
     user_id = message.from_user.id
 
+    # Пропускаем команды меню
+    if question in ["Задать вопрос", "Загрузить документ", "Создать документ"]:
+        return
+
     async for session in get_session():
         repo = UserRepository(session)
         user = await repo.get_by_telegram_id(user_id)
@@ -438,30 +442,30 @@ async def handle_ask(message: Message, state: FSMContext):
                 if resp.status == 200:
                     data = await resp.json()
                     answer = data["answer"]
-                    sources = data["sources"]
+                    sources = data.get("sources", [])
 
-                    # Сохраняем источники в state для callback-обработчика
-                    await state.update_data(last_sources=sources)
+                    # Сохраняем источники в state только если они есть
+                    if sources:
+                        await state.update_data(last_sources=sources)
 
                     # Формируем текст ответа
                     response_text = answer
 
+                    # Создаём inline-кнопки только если есть источники
+                    keyboard = None
                     if sources:
-                        response_text += "\n\n *Источники* (нажми для просмотра):"
-
-                    # Создаём inline-кнопки
-                    keyboard = create_sources_keyboard(sources)
+                        response_text += "\n\n📚 *Источники* (нажми для просмотра):"
+                        keyboard = create_sources_keyboard(sources)
 
                     await message.answer(
                         response_text,
-                        reply_markup=keyboard,
+                        reply_markup=keyboard if keyboard else mode_keyboard,
                         parse_mode="Markdown"
                     )
                 else:
                     await message.answer("Ошибка при обработке запроса.", reply_markup=mode_keyboard)
     except Exception as e:
         await message.answer(f"Произошла ошибка при подключении к серверу.", reply_markup=mode_keyboard)
-
 
 # ============================================================================
 # Callback-обработчик для источников

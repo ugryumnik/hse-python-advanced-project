@@ -30,11 +30,20 @@ async def get_source_chunk(
     rag_service: RAGService = Depends(get_rag_service),
 ):
     try:
-        docs = await rag_service.agent.vector_store.similarity_search(
-            query=f"{request.filename} {request.page}",
+        # Исправлено: search вместо similarity_search
+        docs = await rag_service.agent.vector_store.search(
+            query=f"{request.filename} страница {request.page}",
             k=request.limit,
             filter_dict={"filename": request.filename, "page": request.page},
         )
+
+        if not docs:
+            # Пробуем без фильтра по странице (может быть None)
+            docs = await rag_service.agent.vector_store.search(
+                query=f"{request.filename}",
+                k=request.limit,
+                filter_dict={"filename": request.filename},
+            )
 
         if not docs:
             return SourceResponse(chunks=[])
