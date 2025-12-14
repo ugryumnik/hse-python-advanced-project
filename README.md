@@ -338,7 +338,7 @@ erDiagram
 | :--- | :--- | :--- |
 | **Никита** | **TeamLead, ML Engineer** | **Архитектура & RAG Core.**<br>- Проектирование пайплайна RAG.<br>- Настройка Qdrant.<br>- Промпт-инжиниринг (системные промпты для юр. контекста).<br>- Интеграция LLM API.<br>- Code Review. |
 | **Илья** | **ML Engineer** | **Data Processing & Research.**<br>- Реализация парсинга документов (Docling, PDF/Image handling).<br>- Логика чанкинга (разбиение текста).<br>- Подбор и тестирование эмбеддинг-моделей.<br>- Эксперименты с локальными LLM (опционально). |
-| **Артем** | **Backend / Infra** | **Service & Infrastructure.**<br>- Разработка FastAPI бэкенда.<br>- Настройка Docker / Docker Compose.<br>- Реализация Telegram бота (Aiogram).<br>- Работа с PostgreSQL и SQLAlchemy.<br>- Интеграция Dishka. |
+| **Артем** | **Backend / Infra** | **Service & Infrastructure.**<br>- Разработка FastAPI бэкенда.<br>- Настройка Docker / Docker Compose.<br>- Реализация Telegram бота (Aiogram).<br>- Работа с PostgreSQL и SQLAlchemy.<br> |
 
 ### 6.2. Задачи и оценка времени
 
