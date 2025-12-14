@@ -41,7 +41,7 @@ def test_compute_file_hash_is_stable(tmp_path: Path):
     h2 = compute_file_hash(p)
 
     assert h1 == h2
-    assert len(h1) == 32  # md5 hex
+    assert len(h1) == 32
 
 
 def test_archive_handler_is_archive_and_type(tmp_path: Path):
@@ -81,7 +81,6 @@ def test_archive_extract_rejects_zip_slip(tmp_path: Path):
 
 
 def test_archive_extract_rejects_zip_bomb_ratio(tmp_path: Path):
-    # Highly compressible payload => very high uncompressed/archive ratio
     z = tmp_path / "bomb.zip"
     _make_zip(z, {"big.txt": b"0" * (2 * 1024 * 1024)})
 
@@ -127,8 +126,7 @@ def test_legal_document_loader_load_archive_zip_stats_and_archive_source(tmp_pat
 
     archive = docs_dir / "bundle.zip"
 
-    # include a nested archive + one supported file
-    nested = b"PK\x03\x04"  # not a valid zip, but will still be detected by suffix only when extracted
+    nested = b"PK\x03\x04"
     _make_zip(
         archive,
         {
@@ -165,6 +163,5 @@ def test_legal_document_loader_load_archive_rejects_non_archive(tmp_path: Path):
 
 
 def test_archive_extensions_are_lowercase_and_start_with_dot():
-    # quick sanity: prevents regressions from accidental values like 'zip' or '.ZIP'
     assert all(ext.startswith(".") for ext in ARCHIVE_EXTENSIONS)
     assert all(ext == ext.lower() for ext in ARCHIVE_EXTENSIONS)

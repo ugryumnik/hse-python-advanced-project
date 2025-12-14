@@ -105,7 +105,7 @@ class TestDocumentGenerationService:
         assert "<!DOCTYPE html>" in html
         assert '<h1 id="title">Title</h1>' in html
         assert "<strong>bold</strong>" in html
-        assert "FOR REFERENCE ONLY" in html  # watermark
+        assert "FOR REFERENCE ONLY" in html
 
     @patch('src.core.services.DocumentGenerationService.HTML')
     @patch('src.core.services.DocumentGenerationService.CSS')
@@ -134,24 +134,19 @@ class TestDocumentGenerationService:
     @pytest.mark.asyncio
     async def test_generate_full_flow(self, mock_datetime, service, mock_agent):
         """Test full document generation flow."""
-        # Setup mocks
         mock_datetime.utcnow.return_value = datetime(2023, 1, 1, 12, 0, 0)
 
-        # Mock vector store search
         mock_doc = MagicMock()
         mock_doc.metadata = {"filename": "test.pdf"}
         mock_doc.page_content = "Some content"
         mock_agent.vector_store.search.return_value = [mock_doc]
 
-        # Mock GPT response
         mock_response = _make_response(text="# Generated Document\n\nContent")
         mock_agent.gpt_client.complete.return_value = mock_response
 
-        # Mock PDF generation
         with patch.object(service, '_html_to_pdf', return_value=b"pdf bytes"):
             result = await service.generate("Generate a contract")
 
-        # Verify result
         assert isinstance(result, GeneratedDocument)
         assert result.title == "Generated Document"
         assert result.markdown_content == "# Generated Document\n\nContent"
@@ -159,21 +154,18 @@ class TestDocumentGenerationService:
         assert result.generated_at == datetime(2023, 1, 1, 12, 0, 0)
         assert result.document_type is None
 
-        # Verify calls
         mock_agent.vector_store.search.assert_called_once_with("Generate a contract", k=3)
         mock_agent.gpt_client.complete.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_generate_without_rag(self, service, mock_agent):
         """Test generation without RAG."""
-        # Mock GPT response
         mock_response = _make_response(text="# Document\n\nContent")
         mock_agent.gpt_client.complete.return_value = mock_response
 
         with patch.object(service, '_html_to_pdf', return_value=b"pdf"):
             result = await service.generate("Request", use_rag=False)
 
-        # Vector store should not be called
         mock_agent.vector_store.search.assert_not_called()
         assert isinstance(result, GeneratedDocument)
 
@@ -186,17 +178,15 @@ class TestDocumentGenerationService:
         with patch.object(service, '_html_to_pdf', return_value=b"pdf"):
             result = await service.generate("Request", context="Custom context", use_rag=False)
 
-        # Verify custom context is included in the prompt
         call_args = mock_agent.gpt_client.complete.call_args
         messages = call_args[0][0]
-        prompt_text = messages[1].text  # user message
+        prompt_text = messages[1].text
         assert "Пользовательский контекст:" in prompt_text
         assert "Custom context" in prompt_text
 
     @pytest.mark.asyncio
     async def test_generate_rag_error_handling(self, service, mock_agent):
         """Test generation handles RAG errors gracefully."""
-        # Mock vector store to raise exception
         mock_agent.vector_store.search.side_effect = Exception("RAG error")
 
         mock_response = _make_response(text="# Document\n\nContent")
@@ -205,7 +195,6 @@ class TestDocumentGenerationService:
         with patch.object(service, '_html_to_pdf', return_value=b"pdf"):
             result = await service.generate("Request")
 
-        # Should still succeed despite RAG error
         assert isinstance(result, GeneratedDocument)
         mock_agent.vector_store.search.assert_called_once()
 
@@ -213,5 +202,4 @@ class TestDocumentGenerationService:
         """Test getting document types."""
         types = service.get_document_types()
         assert isinstance(types, dict)
-        # Should return a copy, not the original
         assert types is not service.get_document_types()

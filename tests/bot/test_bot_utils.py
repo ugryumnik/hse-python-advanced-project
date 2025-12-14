@@ -52,7 +52,6 @@ def test_create_sources_keyboard_none_on_empty():
 
 
 def test_create_sources_keyboard_dedup_and_limit():
-    # duplicates by (filename, page) must collapse
     sources = [
         {"filename": "a.pdf", "page": 1},
         {"filename": "a.pdf", "page": 1},
@@ -65,7 +64,6 @@ def test_create_sources_keyboard_dedup_and_limit():
     assert kb.inline_keyboard[0][0].callback_data == "src:0"
     assert kb.inline_keyboard[1][0].callback_data == "src:2"
 
-    # limit to 8 buttons
     many = [{"filename": f"f{i}.pdf", "page": i} for i in range(20)]
     kb2 = create_sources_keyboard(many)
     assert isinstance(kb2, InlineKeyboardMarkup)
@@ -74,7 +72,6 @@ def test_create_sources_keyboard_dedup_and_limit():
 
 def test_mode_keyboard_layout_and_texts():
     assert isinstance(mode_keyboard, ReplyKeyboardMarkup)
-    # two rows: ["Задать вопрос","Загрузить документ"], ["Создать документ"]
     rows = mode_keyboard.keyboard
     assert rows[0][0].text == "Задать вопрос"
     assert rows[0][1].text == "Загрузить документ"

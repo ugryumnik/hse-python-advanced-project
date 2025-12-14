@@ -123,15 +123,12 @@ class TestIngestionService:
     async def test_process_file_document(self, mock_rmdir, mock_remove, mock_exists,
                                        mock_mkdtemp, service, mock_agent, mock_upload_file):
         """Test processing a document file."""
-        # Setup mocks
         mock_mkdtemp.return_value = "/tmp/test"
         mock_exists.return_value = True
 
-        # Mock document loading
         mock_documents = [MagicMock()]
         service.agent.document_loader.load_file.return_value = mock_documents
 
-        # Mock text splitting
         mock_chunks = [MagicMock(), MagicMock()]
         service.agent.text_splitter.split_documents.return_value = mock_chunks
 
@@ -143,10 +140,8 @@ class TestIngestionService:
         with patch('aiofiles.open', side_effect=fake_open), \
             patch('os.path.getsize', return_value=1024):
 
-            # Test
             result = await service.processFile(mock_upload_file)
 
-        # Verify
         assert isinstance(result, IngestionResult)
         assert result.chunks_count == 2
         assert result.files_processed == 1
@@ -165,7 +160,6 @@ class TestIngestionService:
     async def test_process_file_archive(self, mock_rmdir, mock_remove, mock_exists,
                                       mock_mkdtemp, service, mock_agent):
         """Test processing an archive file."""
-        # Setup mocks
         mock_mkdtemp.return_value = "/tmp/test"
         mock_exists.return_value = True
 
@@ -173,7 +167,6 @@ class TestIngestionService:
         mock_upload_file.filename = "test.zip"
         mock_upload_file.read = AsyncMock(side_effect=[b"archive content", b""])
 
-        # Mock archive loading
         mock_documents = [MagicMock(), MagicMock()]
         mock_stats = ArchiveProcessingStats()
         mock_stats.files_processed = 2
@@ -183,7 +176,6 @@ class TestIngestionService:
         ]
         service.agent.document_loader.load_archive.return_value = (mock_documents, mock_stats)
 
-        # Mock text splitting
         mock_chunks = [MagicMock()] * 8
         service.agent.text_splitter.split_documents.return_value = mock_chunks
 
@@ -193,10 +185,8 @@ class TestIngestionService:
         with patch('aiofiles.open', side_effect=fake_open), \
             patch('os.path.getsize', return_value=1024):
 
-            # Test
             result = await service.processFile(mock_upload_file)
 
-        # Verify
         assert isinstance(result, IngestionResult)
         assert result.chunks_count == 8
         assert result.files_processed == 2
@@ -205,7 +195,6 @@ class TestIngestionService:
 
         service.agent.document_loader.load_archive.assert_called_once()
         service.agent.text_splitter.split_documents.assert_called_once_with(mock_documents)
-        # Should be called twice due to batching (8 chunks, batch_size=50)
         assert service.agent.vector_store.add_documents.call_count == 1
 
     @pytest.mark.asyncio
@@ -235,4 +224,4 @@ class TestIngestionService:
         result = await service._process_archive(Path("test.zip"))
 
         assert result.errors == ["Error 1", "Error 2", "Error 3"]
-        assert len(result.errors) == 3  # Should not truncate if <= 10
+        assert len(result.errors) == 3

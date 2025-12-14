@@ -27,7 +27,6 @@ class TestRAGService:
     @pytest.fixture
     def rag_service_default(self):
         """Create RAGService with default initialization."""
-        # This will try to create real configs, but we can mock them if needed
         return RAGService()
 
     def test_init_with_agent(self, mock_agent):
@@ -49,17 +48,14 @@ class TestRAGService:
     @pytest.mark.asyncio
     async def test_query(self, rag_service_with_mock, mock_agent):
         """Test query method."""
-        # Setup mock response
         mock_response = RAGResponse(
             answer="Test answer",
             sources=[{"title": "doc1", "content": "content1"}]
         )
         mock_agent.query.return_value = mock_response
 
-        # Test
         answer, sources = await rag_service_with_mock.query("Test question", k=5)
 
-        # Verify
         assert answer == "Test answer"
         assert sources == [{"title": "doc1", "content": "content1"}]
         mock_agent.query.assert_called_once_with("Test question", k=5)

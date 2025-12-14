@@ -7,7 +7,6 @@ mode_keyboard = ReplyKeyboardMarkup(
             KeyboardButton(text="Загрузить документ"),
         ],
         [
-            # KeyboardButton(text="Прочитать документ"),
             KeyboardButton(text="Создать документ"),
         ],
     ],

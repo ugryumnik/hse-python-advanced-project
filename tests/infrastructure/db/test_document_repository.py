@@ -39,7 +39,6 @@ class TestDocumentRepository:
     @pytest.mark.asyncio
     async def test_create_document(self, repository, mock_session):
         """Test creating a new document."""
-        # Test
         result = await repository.create(
             filename="test.pdf",
             file_path="/path/to/test.pdf",
@@ -48,7 +47,6 @@ class TestDocumentRepository:
             status="processing"
         )
 
-        # Verify
         assert result.filename == "test.pdf"
         assert result.file_path == "/path/to/test.pdf"
         assert result.file_hash == "abc123"
@@ -73,108 +71,86 @@ class TestDocumentRepository:
     @pytest.mark.asyncio
     async def test_get_by_id_found(self, repository, mock_session, sample_document):
         """Test getting document by ID when document exists."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = sample_document
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_by_id(1)
 
-        # Verify
         assert result == sample_document
         mock_session.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_get_by_id_not_found(self, repository, mock_session):
         """Test getting document by ID when document doesn't exist."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_by_id(999)
 
-        # Verify
         assert result is None
 
     @pytest.mark.asyncio
     async def test_get_by_hash_found(self, repository, mock_session, sample_document):
         """Test getting document by hash when document exists."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = sample_document
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_by_hash("abc123")
 
-        # Verify
         assert result == sample_document
 
     @pytest.mark.asyncio
     async def test_get_by_hash_not_found(self, repository, mock_session):
         """Test getting document by hash when document doesn't exist."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_by_hash("nonexistent")
 
-        # Verify
         assert result is None
 
     @pytest.mark.asyncio
     async def test_get_by_user(self, repository, mock_session, sample_document):
         """Test getting documents by user ID."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_scalars = MagicMock()
         mock_scalars.all.return_value = [sample_document]
         mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_by_user(1)
 
-        # Verify
         assert result == [sample_document]
 
     @pytest.mark.asyncio
     async def test_get_by_user_empty(self, repository, mock_session):
         """Test getting documents by user ID when no documents exist."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_scalars = MagicMock()
         mock_scalars.all.return_value = []
         mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_by_user(999)
 
-        # Verify
         assert result == []
 
     @pytest.mark.asyncio
     async def test_get_all_default_params(self, repository, mock_session, sample_document):
         """Test getting all documents with default parameters."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_scalars = MagicMock()
         mock_scalars.all.return_value = [sample_document]
         mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_all()
 
-        # Verify
         assert result == [sample_document]
-        # Check that limit and offset are applied
         call_args = mock_session.execute.call_args[0][0]
         assert str(call_args).find("LIMIT") != -1
         assert str(call_args).find("OFFSET") != -1
@@ -182,31 +158,25 @@ class TestDocumentRepository:
     @pytest.mark.asyncio
     async def test_get_all_custom_params(self, repository, mock_session, sample_document):
         """Test getting all documents with custom parameters."""
-        # Setup mock result
         mock_result = MagicMock()
         mock_scalars = MagicMock()
         mock_scalars.all.return_value = [sample_document]
         mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.get_all(limit=50, offset=10)
 
-        # Verify
         assert result == [sample_document]
 
     @pytest.mark.asyncio
     async def test_update_status_document_exists(self, repository, mock_session, sample_document):
         """Test updating document status when document exists."""
-        # Setup: document exists
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = sample_document
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.update_status(1, "completed")
 
-        # Verify
         assert result == sample_document
         assert result.status == "completed"
         mock_session.commit.assert_called_once()
@@ -215,15 +185,12 @@ class TestDocumentRepository:
     @pytest.mark.asyncio
     async def test_update_status_document_not_exists(self, repository, mock_session):
         """Test updating document status when document doesn't exist."""
-        # Setup: document doesn't exist
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.update_status(999, "completed")
 
-        # Verify
         assert result is None
         mock_session.commit.assert_not_called()
         mock_session.refresh.assert_not_called()
@@ -231,15 +198,12 @@ class TestDocumentRepository:
     @pytest.mark.asyncio
     async def test_delete_document_exists(self, repository, mock_session, sample_document):
         """Test deleting document when document exists."""
-        # Setup: document exists
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = sample_document
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.delete(1)
 
-        # Verify
         assert result is True
         mock_session.delete.assert_called_once_with(sample_document)
         mock_session.commit.assert_called_once()
@@ -247,15 +211,12 @@ class TestDocumentRepository:
     @pytest.mark.asyncio
     async def test_delete_document_not_exists(self, repository, mock_session):
         """Test deleting document when document doesn't exist."""
-        # Setup: document doesn't exist
         mock_result = MagicMock()
         mock_result.scalar_one_or_none.return_value = None
         mock_session.execute.return_value = mock_result
 
-        # Test
         result = await repository.delete(999)
 
-        # Verify
         assert result is False
         mock_session.delete.assert_not_called()
         mock_session.commit.assert_not_called()

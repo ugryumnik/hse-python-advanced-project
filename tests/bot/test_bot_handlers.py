@@ -74,7 +74,6 @@ class _DummyClientSession:
         return False
 
     def post(self, url: str, **kwargs):
-        # Consume responses in order; tests keep it simple (single call or deterministic order)
         if not self._responses:
             raise AssertionError(f"Unexpected POST to {url}")
         return self._responses.pop(0)
@@ -220,7 +219,6 @@ async def test_select_upload_mode_sets_state_for_admin(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_handle_ask_skips_menu_commands(monkeypatch):
-    # Should return early before any DB or HTTP calls
     session_obj = SimpleNamespace()
     repo = SimpleNamespace(get_by_telegram_id=AsyncMock())
 
@@ -282,7 +280,6 @@ async def test_handle_ask_success_with_sources(monkeypatch):
     msg.bot.send_chat_action.assert_awaited_once_with(msg.chat.id, "typing")
     state.update_data.assert_awaited_once()
 
-    # Should send with inline keyboard for sources
     kwargs = msg.answer.await_args.kwargs
     assert kwargs.get("parse_mode") == "Markdown"
     assert isinstance(kwargs.get("reply_markup"), InlineKeyboardMarkup)
@@ -584,7 +581,6 @@ async def test_handle_upload_success_document(monkeypatch):
 
     await h.handle_upload(msg)
 
-    # One "started" message + one final success message
     assert msg.answer.await_count >= 2
     final_text = msg.answer.await_args.args[0]
     assert "успешно" in final_text.lower()
