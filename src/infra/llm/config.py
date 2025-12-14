@@ -70,8 +70,6 @@ class QdrantConfig(BaseSettings):
     
     # Поиск
     search_k: int = 5
-    use_mmr: bool = True
-    mmr_lambda: float = 0.7
 
 
 class ChunkingConfig(BaseModel):
