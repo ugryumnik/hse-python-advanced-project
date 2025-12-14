@@ -26,9 +26,9 @@ async def cmd_start(message: Message, state: FSMContext):
         existing = await repo.get_by_telegram_id(message.from_user.id)
     if not existing:
         await state.set_state(BotStates.auth_token)
-        await message.answer("Введите токен доступа (USER или ADMIN):")
+        await message.answer("Твой секретный токен?")
         return
-    await message.answer("Привет! Я Legal RAG Bot. Выберите режим:", reply_markup=mode_keyboard)
+    await message.answer("Сол Гудман у аппарата. Зачем позвонил?", reply_markup=mode_keyboard)
 
 
 @router.message(BotStates.auth_token, F.text)
@@ -41,19 +41,19 @@ async def handle_auth_token(message: Message, state: FSMContext):
         role = "user"
 
     if role is None:
-        await message.answer("Неверный токен. Доступ запрещён.")
+        await message.answer("Ты в чс. Лучше не звони Солу.")
         return
 
     async for session in get_session():
         repo = UserRepository(session)
         await repo.upsert(message.from_user.id, role)
     await state.clear()
-    await message.answer("Успешная аутентификация. Можете пользоваться ботом.", reply_markup=mode_keyboard)
+    await message.answer("Верный токен.\nСол Гудман у аппарата. Зачем позвонил?", reply_markup=mode_keyboard)
 
 
 @router.message(Command("help"))
 async def cmd_help(message: Message):
-    await message.answer("Отправьте вопрос, и я найду ответ в документах с ссылками на источники.", reply_markup=mode_keyboard)
+    await message.answer("Задай вопрос, и я найду ответ в документах с ссылками на источники.", reply_markup=mode_keyboard)
 
 
 @router.message(Command("reauth"))
@@ -62,7 +62,7 @@ async def cmd_reauth(message: Message, state: FSMContext):
         repo = UserRepository(session)
         await repo.delete_by_telegram_id(message.from_user.id)
     await state.set_state(BotStates.auth_token)
-    await message.answer("Права сброшены. Введите токен доступа (USER или ADMIN):")
+    await message.answer("Права сброшены, назови токен доступа.")
 
 
 @router.message(F.text == "Задать вопрос")
@@ -72,10 +72,10 @@ async def select_ask_mode(message: Message, state: FSMContext):
         user = await repo.get_by_telegram_id(message.from_user.id)
     if not user:
         await state.set_state(BotStates.auth_token)
-        await message.answer("Сначала введите токен доступа.")
+        await message.answer("Сначала токен доступа.")
         return
     await state.set_state(BotStates.ask_mode)
-    await message.answer("Режим вопроса активирован. Отправьте ваш вопрос текстом.", reply_markup=mode_keyboard)
+    await message.answer("Слушаю вопросы.", reply_markup=mode_keyboard)
 
 
 @router.message(F.text == "Загрузить документ")
@@ -85,13 +85,13 @@ async def select_upload_mode(message: Message, state: FSMContext):
         user = await repo.get_by_telegram_id(message.from_user.id)
     if not user:
         await state.set_state(BotStates.auth_token)
-        await message.answer("Сначала введите токен доступа.")
+        await message.answer("Сначала токен доступа.")
         return
     if user.role != "admin":
-        await message.answer("Загрузка доступна только администратору.")
+        await message.answer("Ты не админ, загрузка запрещена.")
         return
     await state.set_state(BotStates.upload_mode)
-    await message.answer("Режим загрузки активирован. Отправьте PDF файлы.", reply_markup=mode_keyboard)
+    await message.answer("Отправляй PDF файлы, я сохраню и буду использовать их.", reply_markup=mode_keyboard)
 
 
 @router.message(BotStates.ask_mode, F.text)
@@ -102,7 +102,7 @@ async def handle_ask(message: Message):
         repo = UserRepository(session)
         user = await repo.get_by_telegram_id(user_id)
     if not user:
-        await message.answer("Недостаточно прав. Введите токен доступа.")
+        await message.answer("Сначала токен доступа.")
         return
 
     try:
@@ -143,7 +143,7 @@ async def handle_upload(message: Message):
         await message.answer("Загрузка запрещена: требуется токен администратора.")
         return
     if message.document.mime_type != "application/pdf":
-        await message.answer("Отправьте файл в формате PDF.", reply_markup=mode_keyboard)
+        await message.answer("Отправь файл в формате PDF.", reply_markup=mode_keyboard)
         return
 
     try:
