@@ -8,6 +8,7 @@ fastapi
 uvicorn
 httpx>=0.25.0
 aiofiles
+python-multipart
 
 # Telegram
 aiogram==3.10.0
