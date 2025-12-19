@@ -17,6 +17,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     gir1.2-pango-1.0 \
     fonts-dejavu-core \
     fonts-liberation \
+    libgl1 \
+    libglx-mesa0 \
+    libgl1-mesa-dri \
+    libxrender1 \
+    libxext6 \
+    libsm6 \
     && rm -rf /var/lib/apt/lists/*
 
 # Copy requirements and install dependencies
