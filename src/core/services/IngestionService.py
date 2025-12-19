@@ -95,7 +95,7 @@ class IngestionService:
                 return await self._process_document(Path(temp_path), filename)
 
         except Exception as e:
-            logger.error(f"Ошибка обработки файла {filename}: {e}")
+            logger.exception(f"Ошибка обработки файла {filename}")
             raise
 
         finally:
@@ -162,11 +162,11 @@ class IngestionService:
         processed_files = []
         for file_info in stats.processed_files:
             entry = {
-                "filename": file_info.filename,
-                "chunks": file_info.chunks_count,
+                "filename": file_info["filename"],
+                "chunks": file_info["chunks"],
             }
-            if file_info.archive_path:
-                entry["archive_path"] = file_info.archive_path
+            if file_info.get("archive_path"):
+                entry["archive_path"] = file_info["archive_path"]
             processed_files.append(entry)
 
         return IngestionResult(
