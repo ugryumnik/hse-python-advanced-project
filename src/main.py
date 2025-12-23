@@ -23,7 +23,7 @@ async def main():
     dp.message.middleware(LoggingMiddleware())
     dp.include_router(router)
 
-    config = uvicorn.Config(app, host="0.0.0.0", port=8000, log_level="info")
+    config = uvicorn.Config(app, host="127.0.0.1", port=8000, log_level="info")
     server = uvicorn.Server(config)
 
     tasks = [
